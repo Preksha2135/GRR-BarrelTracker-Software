@@ -10,7 +10,7 @@
     "client": "cd desktop-client && npm start",
     "client:build": "cd desktop-client && npm run build",
     "server": "cd server && node index.js",
-    "electron:dev": "wait-on http://localhost:3000 && electron .",
+    "electron:dev": "wait-on http://localhost:3000 && timeout /T 5 && electron .",
     "electron": "electron .",
     "build": "npm run client:build",
     "dist": "npm run build && electron-builder",
@@ -33,6 +33,7 @@
     "concurrently": "^8.2.0",
     "electron": "^29.0.0",
     "electron-builder": "^24.0.0",
+    "electron-packager": "^17.1.2",
     "wait-on": "^7.0.1",
     "webpack-cli": "^6.0.1"
   },

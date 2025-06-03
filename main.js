@@ -26,10 +26,9 @@ function createWindow() {
     },
   });
 
-  // Load React build (production)
-  win.loadFile(path.join(__dirname, "desktop-client/build/index.html"));
-  // Uncomment below for development mode:
-  // win.loadURL("http://localhost:3000");
+  win.loadURL(
+    `file://${path.resolve(__dirname, "desktop-client", "build", "index.html")}`
+  );
 }
 
 // === Local file storage for offline small data ===

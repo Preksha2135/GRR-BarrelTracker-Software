@@ -181,6 +181,34 @@ app.put("/api/barrel/:id/waiting-period-end-date", async (req, res) => {
   }
 });
 
+// === DELETE customer record ===
+app.delete("/api/delete/:name", async (req, res) => {
+  try {
+    const { name } = req.params;
+    // Check if the customer exists
+    const customerExists = await pool.query(
+      "SELECT * FROM grr_barrels WHERE customer_name = $1",
+      [name]
+    );
+
+    if (customerExists.rows.length === 0) {
+      return res.status(404).json({ error: "Customer record not found" });
+    }
+
+    // Delete the customer's records
+    await pool.query("DELETE FROM grr_barrels WHERE customer_name = $1", [
+      name,
+    ]);
+
+    res
+      .status(200)
+      .json({ message: `Customer '${name}' deleted successfully.` });
+  } catch (err) {
+    console.error("Error deleting customer:", err);
+    res.status(500).json({ error: "Failed to delete customer record" });
+  }
+});
+
 // Start server
 // app.listen(PORT, () => {
 //   console.log(`Server running on port ${PORT}`);

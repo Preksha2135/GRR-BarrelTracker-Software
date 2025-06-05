@@ -1,6 +1,6 @@
 # GRR BarrelsTrack App
 
-A cross-platform desktop application built with **Electron**, **React**, **Node.js**, and **PostgreSQL** to manage barrel tracking for GRR. This offline-capable app supports local database operations and is designed for fast, intuitive use in real-world logistics.
+A cross-platform desktop application built with **Electron**, **React**, **Node.js**, and **PostgreSQL (NeonDB)** to manage barrel tracking for the company GRR. This cloud-synced app supports real-time data access and is designed for fast, intuitive use in real-world logistics.
 
 
 
@@ -9,7 +9,8 @@ A cross-platform desktop application built with **Electron**, **React**, **Node.
 - Secure Login System  
 - New Record Entry for barrel transactions  
 - Update & Retrieve existing records  
-- Offline Storage using local filesystem  
+- Cloud Sync using **NeonDB** (PostgreSQL)  
+- Offline Storage using local filesystem (fallback)  
 - Report Exporting as `.docx` files  
 - Electron-Packed Desktop App  
 
@@ -19,7 +20,7 @@ A cross-platform desktop application built with **Electron**, **React**, **Node.
 
 - **Frontend:** React.js (CRA)  
 - **Backend:** Node.js + Express  
-- **Database:** PostgreSQL (local)  
+- **Database:** NeonDB (Cloud PostgreSQL)  
 - **Desktop Wrapper:** Electron + electron-builder  
 - **Packaging:** NSIS (Windows installer)  
 - **Auto Update:** electron-updater (GitHub Releases)  
@@ -33,7 +34,7 @@ A cross-platform desktop application built with **Electron**, **React**, **Node.
 ```bash
 git clone https://github.com/your-username/grr-barrels.git
 cd grr-barrels
-```
+````
 
 ### 2. Install Dependencies
 
@@ -43,18 +44,32 @@ cd desktop-client && npm install
 cd ..
 ```
 
-### 3. Start Development Environment
+### 3. Configure Environment
+
+Create a `.env` file in the `server/` folder with your NeonDB connection string:
+
+```env
+DATABASE_URL=postgres://<user>:<password>@ep-xxxxx.neon.tech/dbname?sslmode=require
+```
+
+> Your database must already be created on [https://neon.tech](https://neon.tech) and tables initialized.
+
+
+
+### 4. Start Development Environment
 
 ```bash
-# In one terminal - Start React client
+# Terminal 1 - Start React client
 cd desktop-client
 npm start
 ```
 
 ```bash
-# In another terminal - Start Electron + backend
+# Terminal 2 - Start Electron + backend (inside main.js)
 npm run electron
 ```
+
+> Electron starts the backend server automatically and connects to NeonDB.
 
 
 
@@ -72,24 +87,12 @@ npm run build
 npm run dist
 ```
 
-> The Windows installer (`.exe`) will be created in the `dist/` folder.
+> A Windows installer (`.exe`) will be generated inside the `dist/` folder, ready for distribution.
 
 
 
-## Directory Structure
+## 🤝 Contributions
+
+Contributions are welcome! Please open an issue or pull request on GitHub.
 
 
-grr-barrels/
-├── assets/               # Icons and branding
-├── desktop-client/       # React frontend
-├── server/               # Node.js Express backend
-├── dist/                 # Output folder after packaging
-├── main.js               # Electron entry point
-├── package.json
-
-
-
-
-## Contributions
-
-Contributions are welcome! Please open an issue or pull request.

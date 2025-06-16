@@ -20,11 +20,11 @@ async function createGrrBarrelsTable() {
   await pool.query(`
     CREATE TABLE IF NOT EXISTS grr_barrels (
       id SERIAL PRIMARY KEY,
-      customer_name VARCHAR(255),
-      contact_number VARCHAR(50),
-      site_area_name VARCHAR(255),
-      address TEXT,
-      date DATE,
+      customer_name TEXT,
+      contact_number TEXT,
+      site_area_name TEXT,
+      town TEXT,
+      date TEXT,
       full_barrels_received INTEGER,
       abc_barrels_supplied INTEGER,
       closing_stock INTEGER,

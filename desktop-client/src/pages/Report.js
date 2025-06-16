@@ -39,6 +39,11 @@ function Report() {
   const [noTxnRecords, setNoTxnRecords] = useState([]);
   const [waitingPeriodDates, setWaitingPeriodDates] = useState({});
   const [noTxnSubmitMsg, setNoTxnSubmitMsg] = useState("");
+  // Add new state variables for town-wise report
+  const [towns, setTowns] = useState([]);
+  const [selectedTown, setSelectedTown] = useState("");
+  const [townReportData, setTownReportData] = useState(null);
+  const [townReportBlob, setTownReportBlob] = useState(null);
 
   const { ipcRenderer } = window.require("electron");
   useEffect(() => {
@@ -46,18 +51,31 @@ function Report() {
       .get("http://localhost:5000/api/customers")
       .then((res) => setCustomers(res.data))
       .catch((err) => setError("Failed to fetch customers"));
-  }, []);
 
-  const handleReportTypeChange = (e) => {
-    setReportType(e.target.value);
-    setError("");
-    setDocBlob(null);
-    setReportData(null);
-    setCustomerName("");
-  };
+  // Fetch towns for the town-wise report
+  axios
+    .get("http://localhost:5000/api/towns")
+    .then((res) => setTowns(res.data))
+    .catch((err) => console.error("Failed to fetch towns:", err));
+}, []);
+
+const handleReportTypeChange = (e) => {
+  setReportType(e.target.value);
+  setError("");
+  setDocBlob(null);
+  setReportData(null);
+  setCustomerName("");
+  setSelectedTown("");
+  setTownReportData(null);
+  setTownReportBlob(null);
+};
 
   const handleChange = (e) => {
     setCustomerName(e.target.value);
+  };
+
+  const handleTownChange = (e) => {
+    setSelectedTown(e.target.value);
   };
 
   const handleGenerateReport = async (e) => {
@@ -155,6 +173,232 @@ function Report() {
       console.error(err);
     }
   };
+
+  const handleGenerateTownReport = async (e) => {
+    e.preventDefault();
+    setError("");
+    setTownReportBlob(null);
+    setTownReportData(null);
+    
+    if (!selectedTown) {
+      setError("Please select a town.");
+      return;
+    }
+    
+    try {
+      const res = await axios.get(
+        `http://localhost:5000/api/town-report/${selectedTown}`
+      );
+      
+      if (!res.data || res.data.length === 0) {
+        setError("No records found for this town.");
+        return;
+      }
+      
+      setTownReportData(res.data);
+      
+      // Calculate totals
+      const totals = {
+        os_full_barrels: 0,
+        os_abc_barrels: 0,
+        os_damaged_barrels: 0,
+        closing_stock: 0
+      };
+      
+      res.data.forEach(record => {
+        totals.os_full_barrels += parseInt(record.os_full_barrels || 0);
+        totals.os_abc_barrels += parseInt(record.os_abc_barrels || 0);
+        totals.os_damaged_barrels += parseInt(record.os_damaged_barrels || 0);
+        totals.closing_stock += parseInt(record.closing_stock || 0);
+      });
+      
+      // Create summary table
+      const summaryHeaders = ["Barrel Type", "Total Count"];
+      const summaryRows = [
+        new TableRow({
+          children: summaryHeaders.map(
+            (h) =>
+              new TableCell({
+                children: [
+                  new Paragraph({
+                    children: [new TextRun({ text: h, bold: true })],
+                  }),
+                ],
+                width: { size: 4000, type: WidthType.DXA },
+              })
+          ),
+        }),
+        new TableRow({
+          children: [
+            new TableCell({
+              children: [new Paragraph("Full Barrels")],
+              width: { size: 4000, type: WidthType.DXA },
+            }),
+            new TableCell({
+              children: [new Paragraph(String(totals.os_full_barrels))],
+              width: { size: 4000, type: WidthType.DXA },
+            }),
+          ],
+        }),
+        new TableRow({
+          children: [
+            new TableCell({
+              children: [new Paragraph("ABC Barrels")],
+              width: { size: 4000, type: WidthType.DXA },
+            }),
+            new TableCell({
+              children: [new Paragraph(String(totals.os_abc_barrels))],
+              width: { size: 4000, type: WidthType.DXA },
+            }),
+          ],
+        }),
+        new TableRow({
+          children: [
+            new TableCell({
+              children: [new Paragraph("Damaged Barrels")],
+              width: { size: 4000, type: WidthType.DXA },
+            }),
+            new TableCell({
+              children: [new Paragraph(String(totals.os_damaged_barrels))],
+              width: { size: 4000, type: WidthType.DXA },
+            }),
+          ],
+        }),
+        new TableRow({
+          children: [
+            new TableCell({
+              children: [new Paragraph("Closing Stock")],
+              width: { size: 4000, type: WidthType.DXA },
+            }),
+            new TableCell({
+              children: [new Paragraph(String(totals.closing_stock))],
+              width: { size: 4000, type: WidthType.DXA },
+            }),
+          ],
+        }),
+      ];
+      
+      // Create detailed table
+      const detailHeaders = [
+        "Customer Name", 
+        "Site Area", 
+        "Full Barrels", 
+        "ABC Barrels", 
+        "Damaged Barrels", 
+        "Closing Stock"
+      ];
+      
+      const detailRows = [
+        new TableRow({
+          children: detailHeaders.map(
+            (h) =>
+              new TableCell({
+                children: [
+                  new Paragraph({
+                    children: [new TextRun({ text: h, bold: true })],
+                  }),
+                ],
+                width: { size: 2000, type: WidthType.DXA },
+              })
+          ),
+        }),
+        ...res.data.map(
+          (row) =>
+            new TableRow({
+              children: [
+                new TableCell({
+                  children: [new Paragraph(row.customer_name || "")],
+                  width: { size: 2000, type: WidthType.DXA },
+                }),
+                new TableCell({
+                  children: [new Paragraph(row.site_area_name || "")],
+                  width: { size: 2000, type: WidthType.DXA },
+                }),
+                new TableCell({
+                  children: [new Paragraph(String(row.os_full_barrels || 0))],
+                  width: { size: 2000, type: WidthType.DXA },
+                }),
+                new TableCell({
+                  children: [new Paragraph(String(row.os_abc_barrels || 0))],
+                  width: { size: 2000, type: WidthType.DXA },
+                }),
+                new TableCell({
+                  children: [new Paragraph(String(row.os_damaged_barrels || 0))],
+                  width: { size: 2000, type: WidthType.DXA },
+                }),
+                new TableCell({
+                  children: [new Paragraph(String(row.closing_stock || 0))],
+                  width: { size: 2000, type: WidthType.DXA },
+                }),
+              ],
+            })
+        ),
+      ];
+      // Create the document
+      const doc = new Document({
+        sections: [
+          {
+            properties: {},
+            children: [
+              new Paragraph({
+                children: [
+                  new TextRun({
+                    text: `Town-wise Report for ${selectedTown}`,
+                    bold: true,
+                    size: 32,
+                  }),
+                ],
+                spacing: { after: 300 },
+              }),
+              new Paragraph({
+                children: [
+                  new TextRun({
+                    text: "Summary",
+                    bold: true,
+                    size: 28,
+                  }),
+                ],
+                spacing: { after: 200 },
+              }),
+              new Table({
+                rows: summaryRows,
+                width: { size: 100, type: WidthType.PERCENTAGE },
+              }),
+              new Paragraph({
+                children: [
+                  new TextRun({
+                    text: "Customer Details",
+                    bold: true,
+                    size: 28,
+                  }),
+                ],
+                spacing: { before: 400, after: 200 },
+              }),
+              new Table({
+                rows: detailRows,
+                width: { size: 100, type: WidthType.PERCENTAGE },
+              }),
+            ],
+          },
+        ],
+      });
+      
+      const blob = await Packer.toBlob(doc);
+      setTownReportBlob(blob);
+    } catch (err) {
+      setError("Failed to generate town-wise report.");
+      console.error(err);
+    }
+  };
+
+const handleTownReportDownload = () => {
+  if (townReportBlob) {
+    const filename = `${selectedTown}_town_report.docx`;
+    townReportBlob.arrayBuffer().then((buffer) => {
+      ipcRenderer.send("save-report", buffer, filename);
+    });
+  }
+};
 
   const handleDownload = () => {
     if (docBlob) {
@@ -424,9 +668,8 @@ function Report() {
               >
                 <option value="">Select</option>
                 <option value="customer">Report based on Customer Name</option>
-                <option value="no-transaction">
-                  Report based on No Transaction
-                </option>
+                <option value="town-wise">Town-wise Report</option>
+                <option value="no-transaction">Report based on No Transaction</option>
               </select>
             </div>
           </form>
@@ -487,6 +730,82 @@ function Report() {
                 <button
                   type="button"
                   onClick={handleDownload}
+                  style={{
+                    background: "#388e3c",
+                    color: "#fff",
+                    border: "none",
+                    borderRadius: 4,
+                    padding: "0.75rem",
+                    fontSize: "1rem",
+                    cursor: "pointer",
+                    width: "40%",
+                    alignSelf: "center",
+                    marginTop: "1rem",
+                  }}
+                >
+                  Download Report
+                </button>
+              )}
+            </form>
+          )}
+
+
+          {reportType === "town-wise" && (
+            <form
+              onSubmit={handleGenerateTownReport}
+              style={{ display: "flex", flexDirection: "column", gap: "1rem" }}
+            >
+              {error && (
+                <div
+                  style={{
+                    color: "#d32f2f",
+                    background: "#ffebee",
+                    padding: "0.5rem",
+                    borderRadius: 4,
+                    textAlign: "center",
+                  }}
+                >
+                  {error}
+                </div>
+              )}
+
+              <div style={rowStyle}>
+                <label style={labelStyle}>Town</label>
+                <select
+                  style={inputStyle}
+                  name="town"
+                  value={selectedTown}
+                  onChange={handleTownChange}
+                  required
+                >
+                  <option value="">Select</option>
+                  {towns.map((townObj, index) => (
+                    <option key={index} value={townObj.town}>
+                      {townObj.town}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <button
+                type="submit"
+                style={{
+                  background: "#1976d2",
+                  color: "#fff",
+                  border: "none",
+                  borderRadius: 4,
+                  padding: "0.75rem",
+                  fontSize: "1rem",
+                  cursor: "pointer",
+                  width: "25%",
+                  alignSelf: "center",
+                }}
+              >
+                Generate Report
+              </button>
+              {townReportBlob && (
+                <button
+                  type="button"
+                  onClick={handleTownReportDownload}
                   style={{
                     background: "#388e3c",
                     color: "#fff",

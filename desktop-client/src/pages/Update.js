@@ -7,7 +7,7 @@ function Update() {
     customer_name: "",
     contact_number: "",
     site_area_name: "",
-    address: "",
+    town: "",
     date: "",
     full_barrels_received: "",
     abc_barrels_supplied: "",
@@ -18,21 +18,34 @@ function Update() {
 
   const [customers, setCustomers] = useState([]);
   const [error, setError] = useState("");
-  const [successMessage, setSuccessMessage] = useState(null); // New state for success message
-  const [initialClosingStock, setInitialClosingStock] = useState("");
+  const [successMessage, setSuccessMessage] = useState(null);
+  const [initialClosingStock, setInitialClosingStock] = useState(0); // Initialize with 0
+  const [isEditingContactInfo, setIsEditingContactInfo] = useState(false);
+  const [customerSearch, setCustomerSearch] = useState("");
+  const [showSuggestions, setShowSuggestions] = useState(false);
 
   useEffect(() => {
     axios
       .get("http://localhost:5000/api/customers")
-      .then((res) => setCustomers(res.data))
-      .catch((err) => console.error(err));
+      .then((res) => {
+        const sortedCustomers = res.data.sort((a, b) =>
+          a.customer_name.localeCompare(b.customer_name)
+        );
+        setCustomers(sortedCustomers);
+      })
+      .catch((err) => {
+        console.error("Error fetching customers:", err);
+        setError("Failed to load customer list.");
+      });
   }, []);
 
   const handleCustomerSelect = async (e) => {
     const selectedName = e.target.value;
+    setCustomerSearch(selectedName); // Keep input box in sync
     setForm((prev) => ({ ...prev, customer_name: selectedName }));
-    setSuccessMessage(null); // Clear success message on new customer selection
-    setError(""); // Clear error message on new customer selection
+    setSuccessMessage(null);
+    setError("");
+    setIsEditingContactInfo(false);
 
     if (selectedName) {
       try {
@@ -45,41 +58,94 @@ function Update() {
             customer_name: selectedName,
             contact_number: res.data.contact_number,
             site_area_name: res.data.site_area_name,
-            address: res.data.address,
+            town: res.data.town,
             date: "", // Keep date editable
+            full_barrels_received: "", // Reset for new entry
+            abc_barrels_supplied: "", // Reset for new entry
+            closing_stock: res.data.closing_stock,
+            vehicle_number: "", // Reset for new entry
+            driver_name: "", // Reset for new entry
+          }));
+          // Ensure initialClosingStock is a number, default to 0 if null/undefined
+          setInitialClosingStock(Number(res.data.closing_stock) || 0);
+        } else {
+          setError("Customer data not found.");
+          // Clear the form if customer data is not found
+          setForm({
+            customer_name: "",
+            contact_number: "",
+            site_area_name: "",
+            town: "",
+            date: "",
             full_barrels_received: "",
             abc_barrels_supplied: "",
-            closing_stock: res.data.closing_stock,
+            closing_stock: "",
             vehicle_number: "",
             driver_name: "",
-          }));
-          setInitialClosingStock(res.data.closing_stock || 0);
+          });
+          setInitialClosingStock(0);
         }
       } catch (err) {
-        console.error(err);
-        setError("Failed to fetch customer data."); // Set error for fetching customer data
+        console.error("Error fetching customer data:", err);
+        setError("Failed to fetch customer data.");
+        // Clear the form on error
+        setForm({
+          customer_name: "",
+          contact_number: "",
+          site_area_name: "",
+          town: "",
+          date: "",
+          full_barrels_received: "",
+          abc_barrels_supplied: "",
+          closing_stock: "",
+          vehicle_number: "",
+          driver_name: "",
+        });
+        setInitialClosingStock(0);
       }
+    } else {
+      // If "Select" option is chosen, clear the form and reset edit mode
+      setForm({
+        customer_name: "",
+        contact_number: "",
+        site_area_name: "",
+        town: "",
+        date: "",
+        full_barrels_received: "",
+        abc_barrels_supplied: "",
+        closing_stock: "",
+        vehicle_number: "",
+        driver_name: "",
+      });
+      setInitialClosingStock(0); // Reset to 0
+      setIsEditingContactInfo(false);
     }
   };
 
   const handleChange = (e) => {
     const { name, value } = e.target;
-    // Clear success/error messages on form input changes
     setSuccessMessage(null);
     setError("");
 
     if (name === "full_barrels_received" || name === "abc_barrels_supplied") {
       setForm((prev) => {
+        // Ensure values are treated as numbers, default to 0 if empty
         const fullBarrels =
           name === "full_barrels_received"
-            ? Number(value)
-            : Number(prev.full_barrels_received || 0);
+            ? Number(value) || 0
+            : Number(prev.full_barrels_received) || 0;
         const abcBarrels =
           name === "abc_barrels_supplied"
-            ? Number(value)
-            : Number(prev.abc_barrels_supplied || 0);
-        const initialStock = Number(initialClosingStock || 0);
+            ? Number(value) || 0
+            : Number(prev.abc_barrels_supplied) || 0;
+        const initialStock = Number(initialClosingStock) || 0;
+
+        // The formula for closing stock seems to be: initial stock - barrels received + barrels supplied
+        // If "full_barrels_received" means barrels *returned* to the customer (reducing their stock)
+        // and "abc_barrels_supplied" means barrels *given* to the customer (increasing their stock).
+        // Let's assume the current logic in your code for calculation is correct based on your business need.
         const newClosingStock = initialStock - fullBarrels + abcBarrels;
+
         return {
           ...prev,
           [name]: value,
@@ -91,13 +157,19 @@ function Update() {
     }
   };
 
+  const handleEditClick = () => {
+    setIsEditingContactInfo(true);
+    setSuccessMessage(null);
+    setError("");
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     const {
       customer_name,
       contact_number,
       site_area_name,
-      address,
+      town,
       date,
       full_barrels_received,
       abc_barrels_supplied,
@@ -106,45 +178,45 @@ function Update() {
       driver_name,
     } = form;
 
+    setError("");
+    setSuccessMessage(null);
+
+    // Basic validation
     if (
       !customer_name ||
       !contact_number ||
       !site_area_name ||
-      !address ||
+      !town ||
       !date ||
-      full_barrels_received === "" || // Check for empty string rather than falsy 0
-      abc_barrels_supplied === "" || // Check for empty string rather than falsy 0
-      closing_stock === "" ||
+      full_barrels_received === "" || // Check for empty string as 0 is a valid number
+      abc_barrels_supplied === "" || // Check for empty string as 0 is a valid number
+      closing_stock === "" || // Check for empty string as 0 is a valid number
       !vehicle_number ||
       !driver_name
     ) {
       setError("Please fill in all fields.");
-      setSuccessMessage(null); // Clear success message if validation fails
       return;
     }
-
-    setError(""); // Clear error before API call
-    setSuccessMessage(null); // Clear success message before API call
 
     try {
       await axios.put(`http://localhost:5000/api/customer/${customer_name}`, {
         contact_number,
         site_area_name,
-        address,
+        town,
         date,
-        full_barrels_received,
-        abc_barrels_supplied,
-        closing_stock,
+        full_barrels_received: Number(full_barrels_received), // Ensure numbers are sent as numbers
+        abc_barrels_supplied: Number(abc_barrels_supplied), // Ensure numbers are sent as numbers
+        closing_stock: Number(closing_stock), // Ensure numbers are sent as numbers
         vehicle_number,
         driver_name,
       });
-      // Set success message as a simple string on successful update
       setSuccessMessage("Record updated successfully!");
-      // Optionally reset form if desired, or leave it populated for further edits
-      // For this page, leaving it populated is often better for updates.
+      setIsEditingContactInfo(false);
+      // Optionally, you might want to re-fetch customer data to update the form with the very latest values
+      // This is good practice if other parts of your application might also modify this data.
+      // handleCustomerSelect({ target: { value: customer_name } }); // Re-fetch the data for the selected customer
     } catch (err) {
       setError("Failed to update record.");
-      setSuccessMessage(null); // Clear success message on update failure
       console.error(err);
     }
   };
@@ -172,14 +244,36 @@ function Update() {
     fontSize: "1rem",
   };
 
-  // Define the success message style
   const successMessageStyle = {
-    color: "#2e7d32", // Green color for success
-    background: "#e8f5e9", // Light green background
+    color: "#2e7d32",
+    background: "#e8f5e9",
     padding: "0.5rem",
     borderRadius: 4,
     textAlign: "center",
-    fontWeight: "bold", // Make the text bold
+    fontWeight: "bold",
+  };
+
+  const buttonContainerStyle = {
+    display: "flex",
+    justifyContent: "center",
+    gap: "1rem",
+    marginTop: "1rem",
+  };
+
+  const buttonStyle = {
+    background: "#1976d2",
+    color: "#fff",
+    border: "none",
+    borderRadius: 4,
+    padding: "0.75rem 1.5rem",
+    fontSize: "1rem",
+    cursor: "pointer",
+    minWidth: "120px",
+  };
+
+  const editButtonStyle = {
+    ...buttonStyle,
+    background: "#388e3c",
   };
 
   return (
@@ -210,7 +304,6 @@ function Update() {
           }}
         >
           <h2 style={{ textAlign: "center" }}>Barrels Transaction</h2>
-          {/* Display error message */}
           {error && (
             <div
               style={{
@@ -224,11 +317,94 @@ function Update() {
               {error}
             </div>
           )}
-          {/* Display success message */}
           {successMessage && (
             <div style={successMessageStyle}>{successMessage}</div>
           )}
 
+          {/* <div style={rowStyle}>
+            <label style={labelStyle}>Customer Name</label>
+            <div style={{ position: "relative", width: "50%" }}>
+              <input
+
+                type="text"
+                name="customer_name"
+                style={inputStyle}
+                value={form.customer_name}
+                placeholder="Type/Select Customer Name"
+                onChange={(e) => {
+                  const value = e.target.value;
+                  setForm((prev) => ({ ...prev, customer_name: value }));
+                  setShowSuggestions(true);
+                }}
+                onBlur={() => {
+                  // Delay hiding to allow click selection
+                  setTimeout(() => setShowSuggestions(false), 100);
+                }}
+                onFocus={() => {
+                  setShowSuggestions(true);
+                }}
+                autoComplete="off"
+              />
+              
+              {showSuggestions && (
+                <ul
+                  style={{
+                    position: "absolute",
+                    top: "100%",
+                    left: 0,
+                    right: 0,
+                    background: "#fff",
+                    border: "1px solid #ccc",
+                    maxHeight: "200px",
+                    overflowY: "auto",
+                    margin: 0,
+                    padding: 0,
+                    listStyle: "none",
+                    zIndex: 10,
+                  }}
+                >
+                  {customers
+                    .filter((cust) => {
+                      // If no input, show all customers
+                      if (!form.customer_name) return true;
+                      
+                      // If input starts with a letter, only show names starting with that letter
+                      const inputValue = form.customer_name.toLowerCase();
+                      const customerName = cust.customer_name.toLowerCase();
+                      
+                      // Check if the first character is entered
+                      if (inputValue.length === 1) {
+                        // Only show names starting with that letter
+                        return customerName.startsWith(inputValue);
+                      } else {
+                        // For more than one character, show all names containing the input
+                        return customerName.includes(inputValue);
+                      }
+                    })
+                    .sort((a, b) =>
+                      a.customer_name.localeCompare(b.customer_name)
+                    )
+                    .map((cust, idx) => (
+                      <li
+                        key={idx}
+                        onClick={() =>
+                          handleCustomerSelect({
+                            target: { value: cust.customer_name },
+                          })
+                        }
+                        style={{
+                          padding: "0.5rem",
+                          cursor: "pointer",
+                          borderBottom: "1px solid #eee",
+                        }}
+                      >
+                        {cust.customer_name}
+                      </li>
+                    ))}
+                </ul>
+              )}
+            </div>
+          </div> */}
           <div style={rowStyle}>
             <label style={labelStyle}>Customer Name</label>
             <select
@@ -253,6 +429,7 @@ function Update() {
               type="tel"
               name="contact_number"
               value={form.contact_number}
+              disabled={!isEditingContactInfo}
               onChange={handleChange}
             />
           </div>
@@ -263,16 +440,18 @@ function Update() {
               type="text"
               name="site_area_name"
               value={form.site_area_name}
+              disabled={!isEditingContactInfo}
               onChange={handleChange}
             />
           </div>
           <div style={rowStyle}>
-            <label style={labelStyle}>Address</label>
+            <label style={labelStyle}>Town</label>
             <input
               style={inputStyle}
               type="text"
-              name="address"
-              value={form.address}
+              name="town"
+              value={form.town}
+              disabled={!isEditingContactInfo}
               onChange={handleChange}
             />
           </div>
@@ -342,22 +521,24 @@ function Update() {
             />
           </div>
 
-          <button
-            type="submit"
-            style={{
-              background: "#1976d2",
-              color: "#fff",
-              border: "none",
-              borderRadius: 4,
-              padding: "0.75rem",
-              fontSize: "1rem",
-              cursor: "pointer",
-              width: "20%",
-              alignSelf: "center",
-            }}
-          >
-            Submit
-          </button>
+          <div style={buttonContainerStyle}>
+            <button
+              type="button"
+              onClick={handleEditClick}
+              disabled={!form.customer_name || isEditingContactInfo}
+              style={editButtonStyle}
+            >
+              Edit Fields
+            </button>
+
+            <button
+              type="submit"
+              style={buttonStyle}
+              disabled={!form.customer_name}
+            >
+              Submit
+            </button>
+          </div>
         </form>
       </div>
     </>

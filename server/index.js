@@ -26,7 +26,7 @@ app.post("/api/new", async (req, res) => {
       customer_name,
       contact_number,
       site_area_name,
-      address,
+      town,
       os_full_barrels,
       os_abc_barrels,
       os_damaged_barrels,
@@ -36,7 +36,7 @@ app.post("/api/new", async (req, res) => {
 
     await pool.query(
       `INSERT INTO grr_barrels (
-          customer_name, contact_number, site_area_name, address,
+          customer_name, contact_number, site_area_name, town,
           os_full_barrels, os_abc_barrels, os_damaged_barrels,
           date, closing_stock
         ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
@@ -44,7 +44,7 @@ app.post("/api/new", async (req, res) => {
         customer_name,
         contact_number,
         site_area_name,
-        address,
+        town,
         os_full_barrels,
         os_abc_barrels,
         os_damaged_barrels,
@@ -67,7 +67,7 @@ app.put("/api/customer/:name", async (req, res) => {
     const {
       contact_number,
       site_area_name,
-      address,
+      town,
       date,
       full_barrels_received,
       abc_barrels_supplied,
@@ -92,7 +92,7 @@ app.put("/api/customer/:name", async (req, res) => {
       `UPDATE grr_barrels SET
         contact_number = $1,
         site_area_name = $2,
-        address = $3,
+        town = $3,
         date = $4,
         full_barrels_received = $5,
         abc_barrels_supplied = $6,
@@ -104,7 +104,7 @@ app.put("/api/customer/:name", async (req, res) => {
       [
         contact_number,
         site_area_name,
-        address,
+        town,
         date,
         full_barrels_received,
         abc_barrels_supplied,
@@ -209,9 +209,72 @@ app.delete("/api/delete/:name", async (req, res) => {
   }
 });
 
+
+
+// Get all unique town names
+app.get("/api/towns", async (req, res) => {
+  try {
+    const result = await pool.query(
+      "SELECT DISTINCT town FROM grr_barrels WHERE town IS NOT NULL AND town != ''"
+    );
+    res.json(result.rows);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to fetch towns" });
+  }
+});
+
+// Get aggregated barrel data for a town
+app.get("/api/town-report/:town", async (req, res) => {
+  try {
+    const { town } = req.params;
+    
+    // Get all customers in this town
+    const customersResult = await pool.query(
+      "SELECT DISTINCT customer_name FROM grr_barrels WHERE town = $1",
+      [town]
+    );
+    
+    // Get the latest record for each customer in this town
+    const customers = customersResult.rows.map(row => row.customer_name);
+    let allRecords = [];
+    
+    for (const name of customers) {
+      const recRes = await pool.query(
+        "SELECT * FROM grr_barrels WHERE customer_name = $1 AND town = $2 ORDER BY date DESC LIMIT 1",
+        [name, town]
+      );
+      
+      if (recRes.rows && recRes.rows.length > 0) {
+        allRecords = allRecords.concat(recRes.rows);
+      }
+    }
+    
+    res.json(allRecords);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to fetch town report data" });
+  }
+});
+
+// Get all records for full report
+app.get("/api/full-report", async (req, res) => {
+  try {
+    const result = await pool.query(
+      "SELECT * FROM grr_barrels ORDER BY customer_name, date DESC"
+    );
+    res.json(result.rows);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to fetch full report data" });
+  }
+});
+
 // Start server
 // app.listen(PORT, () => {
 //   console.log(`Server running on port ${PORT}`);
 // });
 
 module.exports = app; // export app, no app.listen here
+
+

@@ -39,45 +39,129 @@ function Report() {
   const [noTxnRecords, setNoTxnRecords] = useState([]);
   const [waitingPeriodDates, setWaitingPeriodDates] = useState({});
   const [noTxnSubmitMsg, setNoTxnSubmitMsg] = useState("");
+  const [isLoading, setIsLoading] = useState(false);
   // Add new state variables for town-wise report
   const [towns, setTowns] = useState([]);
   const [selectedTown, setSelectedTown] = useState("");
   const [townReportData, setTownReportData] = useState(null);
   const [townReportBlob, setTownReportBlob] = useState(null);
+  const [isTownLoading, setIsTownLoading] = useState(false);
+  // New state for complete data report
+  const [completeData, setCompleteData] = useState([]);
+  const [completeDataBlob, setCompleteDataBlob] = useState(null); // For complete data report docx
 
   const { ipcRenderer } = window.require("electron");
   useEffect(() => {
+    // Fetch customers for the customer name report dropdown
     axios
-      .get("http://localhost:5000/api/customers")
+      .get("http://localhost:5000/api/customers-for-selection") // <--- CHANGED THIS ENDPOINT
       .then((res) => setCustomers(res.data))
-      .catch((err) => setError("Failed to fetch customers"));
+      .catch((err) => {
+        console.error("Failed to fetch customers for selection:", err);
+        setError("Failed to load customer list.");
+      });
 
-  // Fetch towns for the town-wise report
-  axios
-    .get("http://localhost:5000/api/towns")
-    .then((res) => setTowns(res.data))
-    .catch((err) => console.error("Failed to fetch towns:", err));
-}, []);
+    // Fetch towns for the town-wise report
+    axios
+      .get("http://localhost:5000/api/towns")
+      .then((res) => setTowns(res.data))
+      .catch((err) => console.error("Failed to fetch towns:", err));
+  }, []);
 
-const handleReportTypeChange = (e) => {
-  setReportType(e.target.value);
-  setError("");
-  setDocBlob(null);
-  setReportData(null);
-  setCustomerName("");
-  setSelectedTown("");
-  setTownReportData(null);
-  setTownReportBlob(null);
-};
-
-  const handleChange = (e) => {
-    setCustomerName(e.target.value);
+  // Define the header map for both table display and docx generation
+  const headerMap = {
+    customer_name: "Customer Name",
+    contact_number: "Contact Number",
+    site_area_name: "Site Area Name",
+    address: "Address",
+    date: "Date",
+    full_barrels_received: "Number of Full Barrels Recieved",
+    abc_barrels_supplied: "Number of ABC Barrels Supplied",
+    closing_stock: "Number of Barrels remaining with the Customer",
   };
 
-  const handleTownChange = (e) => {
-    setSelectedTown(e.target.value);
+  const handleReportTypeChange = (e) => {
+    setReportType(e.target.value);
+    setError("");
+    setDocBlob(null);
+    setReportData(null);
+    setCustomerName("");
+    setSelectedTown("");
+    setTownReportData(null);
+    setTownReportBlob(null);
+    setCompleteData([]); // Clear complete data
+    setCompleteDataBlob(null); // Clear complete data blob
+    // If "Complete Data Report" is selected, fetch the data immediately
+    if (e.target.value === "all-data") {
+      fetchCompleteDataReport();
+    }
   };
 
+  const handleChange = async (e) => {
+    const selectedCustomerName = e.target.value;
+    setCustomerName(selectedCustomerName);
+    setError("");
+    setDocBlob(null); // Clear previous doc blob when selection changes
+    setReportData(null); // Clear previous report data when selection changes
+
+    if (!selectedCustomerName) {
+      // If "Select" is chosen, clear data and return
+      return;
+    }
+
+    setIsLoading(true); // Set loading state
+    try {
+      // Fetch data for the selected customer
+      const res = await axios.get(
+        `http://localhost:5000/api/customer/${selectedCustomerName}/all`
+      );
+
+      if (!res.data || res.data.length === 0) {
+        setError("No records found for this customer.");
+        setReportData([]); // Set to empty array to ensure table doesn't render if no data
+      } else {
+        setReportData(res.data); // Set the fetched data to state for table display
+      }
+    } catch (err) {
+      setError("Failed to fetch customer report data.");
+      console.error("Error fetching report data:", err);
+      setReportData([]); // Clear data on error
+    } finally {
+      setIsLoading(false); // Clear loading state
+    }
+  };
+
+  const handleTownChange = async (e) => {
+    const town = e.target.value;
+    setSelectedTown(town);
+    setError("");
+    setTownReportBlob(null); // Clear previous doc blob
+    setTownReportData(null); // Clear previous report data
+
+    if (!town) {
+      return; // If "Select" is chosen, clear data and return
+    }
+
+    setIsTownLoading(true); // Set loading state
+    try {
+      const res = await axios.get(
+        `http://localhost:5000/api/town-report/${town}`
+      );
+
+      if (!res.data || res.data.length === 0) {
+        setError("No records found for this town.");
+        setTownReportData([]); // Set to empty array to ensure tables don't render if no data
+      } else {
+        setTownReportData(res.data); // Set the fetched data to state for table display
+      }
+    } catch (err) {
+      setError("Failed to fetch town report data.");
+      console.error("Error fetching town report data:", err);
+      setTownReportData([]); // Clear data on error
+    } finally {
+      setIsTownLoading(false); // Clear loading state
+    }
+  };
   const handleGenerateReport = async (e) => {
     e.preventDefault();
     setError("");
@@ -88,27 +172,8 @@ const handleReportTypeChange = (e) => {
       return;
     }
     try {
-      const res = await axios.get(
-        `http://localhost:5000/api/customer/${customerName}/all`
-      );
-      if (!res.data || res.data.length === 0) {
-        setError("No records found for this customer.");
-        return;
-      }
-      setReportData(res.data);
-      // Map fields to custom headers (only include the required fields)
-      const headerMap = {
-        customer_name: "Customer Name",
-        contact_number: "Contact Number",
-        site_area_name: "Site Area Name",
-        address: "Address",
-        date: "Date",
-        full_barrels_received: "Number of Full Barrels Recieved",
-        abc_barrels_supplied: "Number of ABC Barrels Supplied",
-        closing_stock: "Number of Barrels remaining with the Customer",
-      };
+      // Prepare table rows using the already available reportData
       const headers = Object.values(headerMap);
-      // Prepare table rows
       const tableRows = [
         new TableRow({
           children: headers.map(
@@ -123,7 +188,7 @@ const handleReportTypeChange = (e) => {
               })
           ),
         }),
-        ...res.data.map(
+        ...reportData.map(
           (row) =>
             new TableRow({
               children: Object.keys(headerMap).map(
@@ -142,6 +207,7 @@ const handleReportTypeChange = (e) => {
             })
         ),
       ];
+
       // Create the document
       const doc = new Document({
         sections: [
@@ -170,7 +236,7 @@ const handleReportTypeChange = (e) => {
       setDocBlob(blob);
     } catch (err) {
       setError("Failed to generate report.");
-      console.error(err);
+      console.error("Error generating docx:", err);
     }
   };
 
@@ -178,41 +244,29 @@ const handleReportTypeChange = (e) => {
     e.preventDefault();
     setError("");
     setTownReportBlob(null);
-    setTownReportData(null);
-    
-    if (!selectedTown) {
-      setError("Please select a town.");
+
+    if (!selectedTown || !townReportData || townReportData.length === 0) {
+      setError("Please select a town and ensure data is loaded.");
       return;
     }
-    
+
     try {
-      const res = await axios.get(
-        `http://localhost:5000/api/town-report/${selectedTown}`
-      );
-      
-      if (!res.data || res.data.length === 0) {
-        setError("No records found for this town.");
-        return;
-      }
-      
-      setTownReportData(res.data);
-      
-      // Calculate totals
+      // Calculate totals using the already available townReportData
       const totals = {
         os_full_barrels: 0,
         os_abc_barrels: 0,
         os_damaged_barrels: 0,
-        closing_stock: 0
+        closing_stock: 0,
       };
-      
-      res.data.forEach(record => {
+
+      townReportData.forEach((record) => {
         totals.os_full_barrels += parseInt(record.os_full_barrels || 0);
         totals.os_abc_barrels += parseInt(record.os_abc_barrels || 0);
         totals.os_damaged_barrels += parseInt(record.os_damaged_barrels || 0);
         totals.closing_stock += parseInt(record.closing_stock || 0);
       });
-      
-      // Create summary table
+
+      // Create summary table for docx
       const summaryHeaders = ["Barrel Type", "Total Count"];
       const summaryRows = [
         new TableRow({
@@ -277,17 +331,17 @@ const handleReportTypeChange = (e) => {
           ],
         }),
       ];
-      
-      // Create detailed table
+
+      // Create detailed table for docx
       const detailHeaders = [
-        "Customer Name", 
-        "Site Area", 
-        "Full Barrels", 
-        "ABC Barrels", 
-        "Damaged Barrels", 
-        "Closing Stock"
+        "Customer Name",
+        "Site Area",
+        "Full Barrels",
+        "ABC Barrels",
+        "Damaged Barrels",
+        "Closing Stock",
       ];
-      
+
       const detailRows = [
         new TableRow({
           children: detailHeaders.map(
@@ -302,7 +356,7 @@ const handleReportTypeChange = (e) => {
               })
           ),
         }),
-        ...res.data.map(
+        ...townReportData.map(
           (row) =>
             new TableRow({
               children: [
@@ -323,7 +377,9 @@ const handleReportTypeChange = (e) => {
                   width: { size: 2000, type: WidthType.DXA },
                 }),
                 new TableCell({
-                  children: [new Paragraph(String(row.os_damaged_barrels || 0))],
+                  children: [
+                    new Paragraph(String(row.os_damaged_barrels || 0)),
+                  ],
                   width: { size: 2000, type: WidthType.DXA },
                 }),
                 new TableCell({
@@ -334,6 +390,7 @@ const handleReportTypeChange = (e) => {
             })
         ),
       ];
+
       // Create the document
       const doc = new Document({
         sections: [
@@ -382,7 +439,7 @@ const handleReportTypeChange = (e) => {
           },
         ],
       });
-      
+
       const blob = await Packer.toBlob(doc);
       setTownReportBlob(blob);
     } catch (err) {
@@ -391,14 +448,14 @@ const handleReportTypeChange = (e) => {
     }
   };
 
-const handleTownReportDownload = () => {
-  if (townReportBlob) {
-    const filename = `${selectedTown}_town_report.docx`;
-    townReportBlob.arrayBuffer().then((buffer) => {
-      ipcRenderer.send("save-report", buffer, filename);
-    });
-  }
-};
+  const handleTownReportDownload = () => {
+    if (townReportBlob) {
+      const filename = `${selectedTown}_town_report.docx`;
+      townReportBlob.arrayBuffer().then((buffer) => {
+        ipcRenderer.send("save-report", buffer, filename);
+      });
+    }
+  };
 
   const handleDownload = () => {
     if (docBlob) {
@@ -409,61 +466,402 @@ const handleTownReportDownload = () => {
     }
   };
 
+  // const handleNoTransactionReport = async (e) => {
+  //   e.preventDefault(); // Prevent default form submission behavior
+  //   setError(""); // Clear any previous errors
+  //   setNoTxnDocBlob(null); // Clear any previously generated document blob
+  //   setNoTxnRecords([]); // Clear previous no transaction records
+  //   setWaitingPeriodDates({}); // Clear previous waiting period dates
+
+  //   try {
+  //     // Fetch all barrel records
+  //     const res = await axios.get("http://localhost:5000/api/barrels/all");
+  //     let allRecords = res.data;
+
+  //     // Get today's date and set hours to 0 for accurate date comparison
+  //     const today = new Date();
+  //     today.setHours(0, 0, 0, 0);
+
+  //     // --- NEW STRATEGY FOR "NO TRANSACTION REPORT" INPUT LIST ---
+
+  //     // Step 1: Identify all customer names that already have *any* record with a waiting_period_end_date set.
+  //     const customersWithSetWaitingPeriod = new Set();
+  //     allRecords.forEach((record) => {
+  //       if (record.waiting_period_end_date) {
+  //         customersWithSetWaitingPeriod.add(record.customer_name);
+  //       }
+  //     });
+
+  //     // Step 2: Filter all records for the 60-day gap criteria AND ensure the customer has NOT had a waiting_period_end_date set on *any* of their records.
+  //     const candidatesForNoTxnReport = allRecords.filter((row) => {
+  //       // Exclude customers who already have a waiting_period_end_date set on any of their records
+  //       if (customersWithSetWaitingPeriod.has(row.customer_name)) {
+  //         return false;
+  //       }
+
+  //       // Skip if 'date' is not present
+  //       if (!row.date) return false;
+
+  //       const recordDate = new Date(row.date);
+  //       recordDate.setHours(0, 0, 0, 0);
+
+  //       const diffDays = Math.floor(
+  //         (today - recordDate) / (1000 * 60 * 60 * 24)
+  //       );
+
+  //       // Return true if the difference is 60 days or more
+  //       return diffDays >= 60;
+  //     });
+
+  //     // Step 3: From these candidates, deduplicate by customer_name, keeping the record with the largest ID.
+  //     const uniqueNoTxnRecordsMap = new Map();
+  //     candidatesForNoTxnReport.forEach((record) => {
+  //       const existingRecord = uniqueNoTxnRecordsMap.get(record.customer_name);
+  //       if (
+  //         !existingRecord ||
+  //         parseInt(record.id) > parseInt(existingRecord.id)
+  //       ) {
+  //         uniqueNoTxnRecordsMap.set(record.customer_name, record);
+  //       }
+  //     });
+  //     const filteredAndDeduplicatedNoTxn = Array.from(
+  //       uniqueNoTxnRecordsMap.values()
+  //     );
+
+  //     // --- Filtering and Deduplicating for "Waiting Period End Date" report (for the DOCX table) ---
+  //     // This section remains as previously corrected, as it's for records where
+  //     // waiting_period_end_date *is* set and is today or earlier.
+  //     const filteredForWaitingPeriod = allRecords.filter((row) => {
+  //       if (!row.waiting_period_end_date) return false; // Skip if 'waiting_period_end_date' is not present
+
+  //       const waitingDate = new Date(row.waiting_period_end_date);
+  //       waitingDate.setHours(0, 0, 0, 0);
+
+  //       return waitingDate.getTime() <= today.getTime(); // Return true if the waiting date is today or earlier
+  //     });
+
+  //     // Deduplicate the filtered waiting period records by customer_name, keeping the largest ID
+  //     const uniqueWaitingPeriodRecordsMap = new Map();
+  //     filteredForWaitingPeriod.forEach((record) => {
+  //       const existingRecord = uniqueWaitingPeriodRecordsMap.get(
+  //         record.customer_name
+  //       );
+  //       if (
+  //         !existingRecord ||
+  //         parseInt(record.id) > parseInt(existingRecord.id)
+  //       ) {
+  //         uniqueWaitingPeriodRecordsMap.set(record.customer_name, record);
+  //       }
+  //     });
+  //     const waitingPeriodRecords = Array.from(
+  //       uniqueWaitingPeriodRecordsMap.values()
+  //     );
+
+  //     // If no records are found for either report, set an error and return
+  //     if (
+  //       filteredAndDeduplicatedNoTxn.length === 0 &&
+  //       waitingPeriodRecords.length === 0
+  //     ) {
+  //       setError(
+  //         "No records found with a 60-day or more gap or expiring waiting period."
+  //       );
+  //       return;
+  //     }
+
+  //     // Sort the filtered and deduplicated "No Transaction" records by date in ascending order
+  //     filteredAndDeduplicatedNoTxn.sort(
+  //       (a, b) => new Date(a.date) - new Date(b.date)
+  //     );
+  //     setNoTxnRecords(filteredAndDeduplicatedNoTxn); // Update state with filtered records for the form
+
+  //     // Initialize waitingPeriodDates state for the "No Transaction" records that can be updated
+  //     const initialDates = {};
+  //     filteredAndDeduplicatedNoTxn.forEach((row) => {
+  //       initialDates[row.id] = row.waiting_period_end_date || "";
+  //     });
+  //     setWaitingPeriodDates(initialDates); // Update state with initial waiting period dates
+
+  //     // Prepare headers for the Word document tables
+  //     const headers = ["Customer Name", "Contact Number", "Date"];
+
+  //     // Prepare table 1 rows (records with 60-day or more gap) for the Word document
+  //     const tableRows1 = [
+  //       // Header row
+  //       new TableRow({
+  //         children: headers.map(
+  //           (h) =>
+  //             new TableCell({
+  //               children: [
+  //                 new Paragraph({
+  //                   children: [new TextRun({ text: h, bold: true })],
+  //                 }),
+  //               ],
+  //               width: { size: 2000, type: WidthType.DXA }, // Set column width
+  //             })
+  //         ),
+  //       }),
+  //       // Data rows
+  //       ...filteredAndDeduplicatedNoTxn.map(
+  //         (row) =>
+  //           new TableRow({
+  //             children: [
+  //               new TableCell({
+  //                 children: [new Paragraph(row.customer_name || "")],
+  //                 width: { size: 2000, type: WidthType.DXA },
+  //               }),
+  //               new TableCell({
+  //                 children: [new Paragraph(row.contact_number || "")],
+  //                 width: { size: 2000, type: WidthType.DXA },
+  //               }),
+  //               new TableCell({
+  //                 children: [new Paragraph(formatUTCToLocal(row.date))], // Format date for display
+  //                 width: { size: 2000, type: WidthType.DXA },
+  //               }),
+  //             ],
+  //           })
+  //       ),
+  //     ];
+
+  //     // Prepare table 2 rows (records where waiting_period_end_date is today or earlier) for the Word document
+  //     const tableRows2 = [
+  //       // Header row
+  //       new TableRow({
+  //         children: headers.map(
+  //           (h) =>
+  //             new TableCell({
+  //               children: [
+  //                 new Paragraph({
+  //                   children: [new TextRun({ text: h, bold: true })],
+  //                 }),
+  //               ],
+  //               width: { size: 2000, type: WidthType.DXA },
+  //             })
+  //         ),
+  //       }),
+  //       // Data rows
+  //       ...waitingPeriodRecords.map(
+  //         (row) =>
+  //           new TableRow({
+  //             children: [
+  //               new TableCell({
+  //                 children: [new Paragraph(row.customer_name || "")],
+  //                 width: { size: 2000, type: WidthType.DXA },
+  //               }),
+  //               new TableCell({
+  //                 children: [new Paragraph(row.contact_number || "")],
+  //                 width: { size: 2000, type: WidthType.DXA },
+  //               }),
+  //               new TableCell({
+  //                 children: [
+  //                   new Paragraph(
+  //                     formatUTCToLocal(row.waiting_period_end_date)
+  //                   ), // Format date for display
+  //                 ],
+  //                 width: { size: 2000, type: WidthType.DXA },
+  //               }),
+  //             ],
+  //           })
+  //       ),
+  //     ];
+
+  //     // Create the Word document with two sections/tables
+  //     const doc = new Document({
+  //       sections: [
+  //         {
+  //           properties: {},
+  //           children: [
+  //             // Title for the first report
+  //             new Paragraph({
+  //               children: [
+  //                 new TextRun({
+  //                   text: `No Transaction Report (60-day or more gap)`,
+  //                   bold: true,
+  //                   size: 32, // Font size
+  //                 }),
+  //               ],
+  //               spacing: { after: 300 }, // Spacing after the paragraph
+  //             }),
+  //             // Subtitle for the first table
+  //             new Paragraph({
+  //               children: [
+  //                 new TextRun({
+  //                   text: "Records with 60-day or more gap",
+  //                   bold: true,
+  //                   size: 28,
+  //                 }),
+  //               ],
+  //               spacing: { after: 200 },
+  //             }),
+  //             // First table
+  //             new Table({
+  //               rows: tableRows1,
+  //               width: { size: 100, type: WidthType.PERCENTAGE }, // Table width
+  //             }),
+  //             // Title for the second report (with spacing before it)
+  //             new Paragraph({
+  //               children: [
+  //                 new TextRun({
+  //                   text: "Records with Waiting Period End Date",
+  //                   bold: true,
+  //                   size: 28,
+  //                 }),
+  //               ],
+  //               spacing: { before: 400, after: 200 }, // Spacing before and after
+  //             }),
+  //             new Table({
+  //               rows: tableRows2,
+  //               width: { size: 100, type: WidthType.PERCENTAGE },
+  //             }),
+  //           ],
+  //         },
+  //       ],
+  //     });
+
+  //     // Generate the document as a Blob
+  //     const blob = await Packer.toBlob(doc);
+  //     setNoTxnDocBlob(blob); // Update state with the generated blob
+
+  //     // If running in an Electron environment, save the report using the provided API
+  //     if (window.electron?.saveReport) {
+  //       const filename = "no_transaction_report.docx";
+  //       blob.arrayBuffer().then((buffer) => {
+  //         window.electron.saveReport(buffer, filename);
+  //       });
+  //     }
+  //   } catch (err) {
+  //     // Catch and handle any errors during the process
+  //     setError("Failed to generate no transaction report.");
+  //     console.error(err); // Log the error to the console
+  //   }
+  // };
   const handleNoTransactionReport = async (e) => {
-    e.preventDefault();
-    setError("");
-    setNoTxnDocBlob(null);
-    setNoTxnRecords([]);
-    setWaitingPeriodDates({});
+    e.preventDefault(); // Prevent default form submission behavior
+    setError(""); // Clear any previous errors
+    setNoTxnDocBlob(null); // Clear any previously generated document blob
+    setNoTxnRecords([]); // Clear previous no transaction records
+    setWaitingPeriodDates({}); // Clear previous waiting period dates
+
     try {
-      // Fetch all records from all customers
-      const res = await axios.get("http://localhost:5000/api/customers");
-      const allCustomers = res.data.map((cust) => cust.customer_name);
-      let allRecords = [];
-      for (const name of allCustomers) {
-        const recRes = await axios.get(
-          `http://localhost:5000/api/customer/${name}/all`
-        );
-        if (recRes.data && recRes.data.length > 0) {
-          allRecords = allRecords.concat(recRes.data);
-        }
-      }
-      // Filter records where date is 30 days or more before today
+      // Fetch all barrel records
+      const res = await axios.get("http://localhost:5000/api/barrels/all");
+      let allRecords = res.data;
+
+      // Get today's date and set hours to 0 for accurate date comparison
       const today = new Date();
       today.setHours(0, 0, 0, 0);
-      const filtered = allRecords.filter((row) => {
+
+      // --- NEW STRATEGY FOR "NO TRANSACTION REPORT" INPUT LIST ---
+
+      // Step 1: Identify all customer names that already have *any* record with a waiting_period_end_date set.
+      const customersWithSetWaitingPeriod = new Set();
+      allRecords.forEach((record) => {
+        if (record.waiting_period_end_date) {
+          customersWithSetWaitingPeriod.add(record.customer_name);
+        }
+      });
+
+      // Step 2: Filter all records for the 60-day gap criteria AND ensure the customer has NOT had a waiting_period_end_date set on *any* of their records.
+      const candidatesForNoTxnReport = allRecords.filter((row) => {
+        // Exclude customers who already have a waiting_period_end_date set on any of their records
+        if (customersWithSetWaitingPeriod.has(row.customer_name)) {
+          return false;
+        }
+
+        // Skip if 'date' is not present
         if (!row.date) return false;
-        if (row.waiting_period_end_date) return false; // Exclude if waiting_period_end_date is set
+
         const recordDate = new Date(row.date);
         recordDate.setHours(0, 0, 0, 0);
+
         const diffDays = Math.floor(
           (today - recordDate) / (1000 * 60 * 60 * 24)
         );
-        return diffDays >= 30;
+
+        // Return true if the difference is 60 days or more
+        return diffDays >= 60;
       });
-      // Table 2: records where waiting_period_end_date is today
-      const waitingPeriodRecords = allRecords.filter((row) => {
-        if (!row.waiting_period_end_date) return false;
+
+      // Step 3: From these candidates, deduplicate by customer_name, keeping the record with the largest ID.
+      const uniqueNoTxnRecordsMap = new Map();
+      candidatesForNoTxnReport.forEach((record) => {
+        const existingRecord = uniqueNoTxnRecordsMap.get(record.customer_name);
+        if (
+          !existingRecord ||
+          parseInt(record.id) > parseInt(existingRecord.id)
+        ) {
+          uniqueNoTxnRecordsMap.set(record.customer_name, record);
+        }
+      });
+      const filteredAndDeduplicatedNoTxn = Array.from(
+        uniqueNoTxnRecordsMap.values()
+      );
+
+      // --- Filtering and Deduplicating for "Waiting Period End Date" report (for the DOCX table) ---
+      // This section remains as previously corrected, as it's for records where
+      // waiting_period_end_date *is* set and is today or earlier.
+      const filteredForWaitingPeriod = allRecords.filter((row) => {
+        if (!row.waiting_period_end_date) return false; // Skip if 'waiting_period_end_date' is not present
+
         const waitingDate = new Date(row.waiting_period_end_date);
         waitingDate.setHours(0, 0, 0, 0);
-        return waitingDate.getTime() <= today.getTime();
+
+        return waitingDate.getTime() <= today.getTime(); // Return true if the waiting date is today or earlier
       });
-      if (filtered.length === 0 && waitingPeriodRecords.length === 0) {
-        setError("No records found with a 30-day or more gap.");
+
+      // Deduplicate the filtered waiting period records by customer_name, keeping the largest ID
+      const uniqueWaitingPeriodRecordsMap = new Map();
+      filteredForWaitingPeriod.forEach((record) => {
+        const existingRecord = uniqueWaitingPeriodRecordsMap.get(
+          record.customer_name
+        );
+        if (
+          !existingRecord ||
+          parseInt(record.id) > parseInt(existingRecord.id)
+        ) {
+          uniqueWaitingPeriodRecordsMap.set(record.customer_name, record);
+        }
+      });
+      const waitingPeriodRecords = Array.from(
+        uniqueWaitingPeriodRecordsMap.values()
+      );
+
+      // If no records are found for either report, set an error and return
+      if (
+        filteredAndDeduplicatedNoTxn.length === 0 &&
+        waitingPeriodRecords.length === 0
+      ) {
+        setError(
+          "No records found with a 60-day or more gap or expiring waiting period."
+        );
         return;
       }
-      // Sort by date
-      filtered.sort((a, b) => new Date(a.date) - new Date(b.date));
-      setNoTxnRecords(filtered);
-      // Initialize waitingPeriodDates state
+
+      // Sort the filtered and deduplicated "No Transaction" records by date in ascending order
+      filteredAndDeduplicatedNoTxn.sort(
+        (a, b) => new Date(a.date) - new Date(b.date)
+      );
+      setNoTxnRecords(filteredAndDeduplicatedNoTxn); // Update state with filtered records for the form
+
+      // Initialize waitingPeriodDates state for the "No Transaction" records that can be updated
       const initialDates = {};
-      filtered.forEach((row) => {
+      filteredAndDeduplicatedNoTxn.forEach((row) => {
         initialDates[row.id] = row.waiting_period_end_date || "";
       });
-      setWaitingPeriodDates(initialDates);
-      // Prepare table 1 (30-day gap)
-      const headers = ["Customer Name", "Contact Number", "Date"];
+      setWaitingPeriodDates(initialDates); // Update state with initial waiting period dates
+
+      // --- MODIFICATION START: Add 'Site Area Name' to headers and table rows ---
+
+      // Prepare headers for the Word document tables
+      const headers = [
+        "Customer Name",
+        "Contact Number",
+        "Site Area Name",
+        "Date",
+      ]; // <--- ADDED 'Site Area Name'
+
+      // Prepare table 1 rows (records with 60-day or more gap) for the Word document
       const tableRows1 = [
+        // Header row
         new TableRow({
           children: headers.map(
             (h) =>
@@ -473,11 +871,12 @@ const handleTownReportDownload = () => {
                     children: [new TextRun({ text: h, bold: true })],
                   }),
                 ],
-                width: { size: 2000, type: WidthType.DXA },
+                width: { size: 2000, type: WidthType.DXA }, // Set column width
               })
           ),
         }),
-        ...filtered.map(
+        // Data rows
+        ...filteredAndDeduplicatedNoTxn.map(
           (row) =>
             new TableRow({
               children: [
@@ -489,16 +888,23 @@ const handleTownReportDownload = () => {
                   children: [new Paragraph(row.contact_number || "")],
                   width: { size: 2000, type: WidthType.DXA },
                 }),
+                // <--- NEW: Add Site Area Name cell
                 new TableCell({
-                  children: [new Paragraph(formatUTCToLocal(row.date))],
+                  children: [new Paragraph(row.site_area_name || "")],
+                  width: { size: 2000, type: WidthType.DXA },
+                }),
+                new TableCell({
+                  children: [new Paragraph(formatUTCToLocal(row.date))], // Format date for display
                   width: { size: 2000, type: WidthType.DXA },
                 }),
               ],
             })
         ),
       ];
-      // Prepare table 2 (waiting_period_end_date is today)
+
+      // Prepare table 2 rows (records where waiting_period_end_date is today or earlier) for the Word document
       const tableRows2 = [
+        // Header row
         new TableRow({
           children: headers.map(
             (h) =>
@@ -512,6 +918,7 @@ const handleTownReportDownload = () => {
               })
           ),
         }),
+        // Data rows
         ...waitingPeriodRecords.map(
           (row) =>
             new TableRow({
@@ -524,11 +931,16 @@ const handleTownReportDownload = () => {
                   children: [new Paragraph(row.contact_number || "")],
                   width: { size: 2000, type: WidthType.DXA },
                 }),
+                // <--- NEW: Add Site Area Name cell
+                new TableCell({
+                  children: [new Paragraph(row.site_area_name || "")],
+                  width: { size: 2000, type: WidthType.DXA },
+                }),
                 new TableCell({
                   children: [
                     new Paragraph(
                       formatUTCToLocal(row.waiting_period_end_date)
-                    ),
+                    ), // Format date for display
                   ],
                   width: { size: 2000, type: WidthType.DXA },
                 }),
@@ -536,36 +948,43 @@ const handleTownReportDownload = () => {
             })
         ),
       ];
-      // Create the document with two tables
+
+      // --- MODIFICATION END ---
+
+      // Create the Word document with two sections/tables
       const doc = new Document({
         sections: [
           {
             properties: {},
             children: [
+              // Title for the first report
               new Paragraph({
                 children: [
                   new TextRun({
-                    text: `No Transaction Report (30-day or more gap)`,
+                    text: `No Transaction Report (60-day or more gap)`,
                     bold: true,
-                    size: 32,
+                    size: 32, // Font size
                   }),
                 ],
-                spacing: { after: 300 },
+                spacing: { after: 300 }, // Spacing after the paragraph
               }),
+              // Subtitle for the first table
               new Paragraph({
                 children: [
                   new TextRun({
-                    text: "Records with 30-day or more gap",
+                    text: "Records with 60-day or more gap",
                     bold: true,
                     size: 28,
                   }),
                 ],
                 spacing: { after: 200 },
               }),
+              // First table
               new Table({
                 rows: tableRows1,
-                width: { size: 100, type: WidthType.PERCENTAGE },
+                width: { size: 100, type: WidthType.PERCENTAGE }, // Table width
               }),
+              // Title for the second report (with spacing before it)
               new Paragraph({
                 children: [
                   new TextRun({
@@ -574,7 +993,7 @@ const handleTownReportDownload = () => {
                     size: 28,
                   }),
                 ],
-                spacing: { before: 400, after: 200 },
+                spacing: { before: 400, after: 200 }, // Spacing before and after
               }),
               new Table({
                 rows: tableRows2,
@@ -584,8 +1003,12 @@ const handleTownReportDownload = () => {
           },
         ],
       });
+
+      // Generate the document as a Blob
       const blob = await Packer.toBlob(doc);
-      setNoTxnDocBlob(blob);
+      setNoTxnDocBlob(blob); // Update state with the generated blob
+
+      // If running in an Electron environment, save the report using the provided API
       if (window.electron?.saveReport) {
         const filename = "no_transaction_report.docx";
         blob.arrayBuffer().then((buffer) => {
@@ -593,8 +1016,9 @@ const handleTownReportDownload = () => {
         });
       }
     } catch (err) {
+      // Catch and handle any errors during the process
       setError("Failed to generate no transaction report.");
-      console.error(err);
+      console.error(err); // Log the error to the console
     }
   };
 
@@ -603,6 +1027,51 @@ const handleTownReportDownload = () => {
       ...prev,
       [id]: value === "" ? null : value, // Set NULL when the input is empty
     }));
+  };
+
+  // NEW FUNCTION: Fetch Complete Data Report
+  // Function to fetch JSON complete data (for preview/initial check)
+  const fetchCompleteDataReport = async () => {
+    setError("");
+    setCompleteData([]); // Clear previous data
+    try {
+      console.log("Fetching complete data (JSON)...");
+      const response = await axios.get(
+        "http://localhost:5000/api/reports/complete-data" // Your JSON endpoint
+      );
+      console.log(
+        "Complete data fetched (JSON):",
+        response.data.length,
+        "records"
+      );
+      setCompleteData(response.data);
+    } catch (err) {
+      console.error("Error fetching complete data report (JSON):", err);
+      setError("Failed to fetch complete data report (JSON).");
+      setCompleteData([]); // Ensure data is cleared on error
+    }
+  };
+
+  // NEW HANDLER FOR DOCX DOWNLOAD
+  const handleGenerateCompleteDataDocx = async () => {
+    setError(""); // Clear any previous errors
+    try {
+      console.log("Attempting to fetch DOCX complete data...");
+      const response = await axios.get(
+        "http://localhost:5000/api/reports/all-data/docx", // THIS IS YOUR DOCX ENDPOINT
+        {
+          responseType: "blob", // Important: tell axios to expect a binary response
+        }
+      );
+      const blob = new Blob([response.data], {
+        type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      });
+      saveAs(blob, "Complete_Barrel_Report.docx");
+      console.log("Complete data DOCX report downloaded.");
+    } catch (err) {
+      console.error("Error downloading complete data DOCX report:", err);
+      setError("Failed to download complete data DOCX report.");
+    }
   };
 
   const rowStyle = {
@@ -628,6 +1097,19 @@ const handleTownReportDownload = () => {
     fontSize: "1rem",
   };
 
+  const tableHeaderStyle = {
+    padding: "8px",
+    border: "1px solid #ddd",
+    textAlign: "left",
+    backgroundColor: "#f2f2f2", // Light background for headers
+  };
+
+  const tableCellStyle = {
+    padding: "8px",
+    border: "1px solid #ddd",
+    textAlign: "left",
+  };
+
   return (
     <>
       <Header />
@@ -636,7 +1118,7 @@ const handleTownReportDownload = () => {
           display: "flex",
           justifyContent: "center",
           alignItems: "flex-start",
-          minHeight: "89vh",
+          minHeight: "91vh",
           background: "#f5f5f5",
         }}
       >
@@ -667,16 +1149,16 @@ const handleTownReportDownload = () => {
                 required
               >
                 <option value="">Select</option>
-                <option value="customer">Report based on Customer Name</option>
+                <option value="customer">Customer Name Report</option>
                 <option value="town-wise">Town-wise Report</option>
-                <option value="no-transaction">Report based on No Transaction</option>
+                <option value="no-transaction">No Transaction Report</option>
+                <option value="complete-data">Complete Data Report</option>
               </select>
             </div>
           </form>
-
           {reportType === "customer" && (
             <form
-              onSubmit={handleGenerateReport}
+              onSubmit={handleGenerateReport} // This button now triggers doc generation
               style={{ display: "flex", flexDirection: "column", gap: "1rem" }}
             >
               {error && (
@@ -699,33 +1181,105 @@ const handleTownReportDownload = () => {
                   style={inputStyle}
                   name="customer_name"
                   value={customerName}
-                  onChange={handleChange}
+                  onChange={handleChange} // This fetches data for the table
                   required
                 >
                   <option value="">Select</option>
                   {customers.map((cust, index) => (
                     <option key={index} value={cust.customer_name}>
-                      {cust.customer_name}
+                      {cust.customer_name}{" "}
+                      {cust.site_area_name ? `(${cust.site_area_name})` : ""}
                     </option>
                   ))}
                 </select>
               </div>
-              <button
-                type="submit"
-                style={{
-                  background: "#1976d2",
-                  color: "#fff",
-                  border: "none",
-                  borderRadius: 4,
-                  padding: "0.75rem",
-                  fontSize: "1rem",
-                  cursor: "pointer",
-                  width: "25%",
-                  alignSelf: "center",
-                }}
-              >
-                Generate Report
-              </button>
+
+              {isLoading && (
+                <div style={{ textAlign: "center", padding: "1rem" }}>
+                  Loading report data...
+                </div>
+              )}
+
+              {/* Table to display report data */}
+              {reportData && reportData.length > 0 && (
+                <div style={{ marginTop: "1.5rem", overflowX: "auto" }}>
+                  <h3>Report Preview for {customerName}</h3>
+                  <table
+                    style={{
+                      width: "100%",
+                      borderCollapse: "collapse",
+                      marginTop: "0.5rem",
+                    }}
+                  >
+                    <thead>
+                      <tr style={{ background: "#f0f0f0" }}>
+                        {/* Dynamically render headers from headerMap */}
+                        {Object.values(headerMap).map((header, index) => (
+                          <th key={index} style={tableHeaderStyle}>
+                            {header}
+                          </th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {reportData.map((item, rowIndex) => (
+                        <tr
+                          key={rowIndex}
+                          style={{ borderBottom: "1px solid #eee" }}
+                        >
+                          {/* Dynamically render cells based on headerMap keys */}
+                          {Object.keys(headerMap).map((key, colIndex) => (
+                            <td key={colIndex} style={tableCellStyle}>
+                              {key === "date"
+                                ? formatUTCToLocal(item[key])
+                                : String(item[key] ?? "")}
+                            </td>
+                          ))}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+
+              {/* If no data found after selection */}
+              {customerName &&
+                !isLoading &&
+                reportData &&
+                reportData.length === 0 && (
+                  <div
+                    style={{
+                      color: "#757575",
+                      padding: "1rem",
+                      textAlign: "center",
+                      fontStyle: "italic",
+                    }}
+                  >
+                    No report data found for this customer.
+                  </div>
+                )}
+
+              {/* The Generate Report button now specifically triggers the docx generation */}
+              {customerName && reportData && reportData.length > 0 && (
+                <button
+                  type="submit"
+                  style={{
+                    background: "#1976d2",
+                    color: "#fff",
+                    border: "none",
+                    borderRadius: 4,
+                    padding: "0.75rem",
+                    fontSize: "1rem",
+                    cursor: "pointer",
+                    width: "25%",
+                    alignSelf: "center",
+                    marginTop: "1rem",
+                  }}
+                >
+                  Generate Report (Download Doc)
+                </button>
+              )}
+
               {docBlob && (
                 <button
                   type="button"
@@ -743,16 +1297,57 @@ const handleTownReportDownload = () => {
                     marginTop: "1rem",
                   }}
                 >
-                  Download Report
+                  Download Report (Word Document)
                 </button>
               )}
             </form>
           )}
-
-
+          {/* NEW: Complete Data Report section */}
+          {reportType === "complete-data" && (
+            <div
+              style={{
+                display: "flex",
+                flexDirection: "column",
+                gap: "1rem",
+                marginTop: "1rem",
+              }}
+            >
+              {error && ( // Display error from DOCX download attempt
+                <div
+                  style={{
+                    color: "#d32f2f",
+                    background: "#ffebee",
+                    padding: "0.5rem",
+                    borderRadius: 4,
+                    textAlign: "center",
+                  }}
+                >
+                  {error}
+                </div>
+              )}
+              <button
+                type="button"
+                onClick={handleGenerateCompleteDataDocx} // This calls the new handler
+                style={{
+                  background: "#388e3c",
+                  color: "#fff",
+                  border: "none",
+                  borderRadius: 4,
+                  padding: "0.75rem",
+                  fontSize: "1rem",
+                  cursor: "pointer",
+                  width: "40%",
+                  alignSelf: "center",
+                  marginTop: "1rem",
+                }}
+              >
+                Download Complete Report
+              </button>
+            </div>
+          )}
           {reportType === "town-wise" && (
             <form
-              onSubmit={handleGenerateTownReport}
+              onSubmit={handleGenerateTownReport} // This button now triggers doc generation
               style={{ display: "flex", flexDirection: "column", gap: "1rem" }}
             >
               {error && (
@@ -775,7 +1370,7 @@ const handleTownReportDownload = () => {
                   style={inputStyle}
                   name="town"
                   value={selectedTown}
-                  onChange={handleTownChange}
+                  onChange={handleTownChange} // This fetches data for the tables
                   required
                 >
                   <option value="">Select</option>
@@ -786,22 +1381,178 @@ const handleTownReportDownload = () => {
                   ))}
                 </select>
               </div>
-              <button
-                type="submit"
-                style={{
-                  background: "#1976d2",
-                  color: "#fff",
-                  border: "none",
-                  borderRadius: 4,
-                  padding: "0.75rem",
-                  fontSize: "1rem",
-                  cursor: "pointer",
-                  width: "25%",
-                  alignSelf: "center",
-                }}
-              >
-                Generate Report
-              </button>
+
+              {isTownLoading && (
+                <div style={{ textAlign: "center", padding: "1rem" }}>
+                  Loading town report data...
+                </div>
+              )}
+
+              {/* Summary Table for Town Report */}
+              {selectedTown && townReportData && townReportData.length > 0 && (
+                <div style={{ marginTop: "1.5rem", overflowX: "auto" }}>
+                  <h3>Summary for {selectedTown}</h3>
+                  <table
+                    style={{
+                      width: "100%",
+                      borderCollapse: "collapse",
+                      marginTop: "0.5rem",
+                    }}
+                  >
+                    <thead>
+                      <tr style={{ background: "#f0f0f0" }}>
+                        <th style={tableHeaderStyle}>Barrel Type</th>
+                        <th style={tableHeaderStyle}>Total Count</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {/* Calculate totals for display in the table */}
+                      {(() => {
+                        const totals = {
+                          os_full_barrels: 0,
+                          os_abc_barrels: 0,
+                          os_damaged_barrels: 0,
+                          closing_stock: 0,
+                        };
+                        townReportData.forEach((record) => {
+                          totals.os_full_barrels += parseInt(
+                            record.os_full_barrels || 0
+                          );
+                          totals.os_abc_barrels += parseInt(
+                            record.os_abc_barrels || 0
+                          );
+                          totals.os_damaged_barrels += parseInt(
+                            record.os_damaged_barrels || 0
+                          );
+                          totals.closing_stock += parseInt(
+                            record.closing_stock || 0
+                          );
+                        });
+
+                        return (
+                          <>
+                            <tr style={{ borderBottom: "1px solid #eee" }}>
+                              <td style={tableCellStyle}>Full Barrels</td>
+                              <td style={tableCellStyle}>
+                                {totals.os_full_barrels}
+                              </td>
+                            </tr>
+                            <tr style={{ borderBottom: "1px solid #eee" }}>
+                              <td style={tableCellStyle}>ABC Barrels</td>
+                              <td style={tableCellStyle}>
+                                {totals.os_abc_barrels}
+                              </td>
+                            </tr>
+                            <tr style={{ borderBottom: "1px solid #eee" }}>
+                              <td style={tableCellStyle}>Damaged Barrels</td>
+                              <td style={tableCellStyle}>
+                                {totals.os_damaged_barrels}
+                              </td>
+                            </tr>
+                            <tr style={{ borderBottom: "1px solid #eee" }}>
+                              <td style={tableCellStyle}>Closing Stock</td>
+                              <td style={tableCellStyle}>
+                                {totals.closing_stock}
+                              </td>
+                            </tr>
+                          </>
+                        );
+                      })()}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+
+              {/* Customer Details Table for Town Report (as per image) */}
+              {selectedTown && townReportData && townReportData.length > 0 && (
+                <div style={{ marginTop: "1.5rem", overflowX: "auto" }}>
+                  <h3>Customer Details in {selectedTown}</h3>
+                  <table
+                    style={{
+                      width: "100%",
+                      borderCollapse: "collapse",
+                      marginTop: "0.5rem",
+                    }}
+                  >
+                    <thead>
+                      <tr style={{ background: "#f0f0f0" }}>
+                        <th style={tableHeaderStyle}>Customer Name</th>
+                        <th style={tableHeaderStyle}>Site Area</th>
+                        <th style={tableHeaderStyle}>Full Barrels</th>
+                        <th style={tableHeaderStyle}>ABC Barrels</th>
+                        <th style={tableHeaderStyle}>Damaged Barrels</th>
+                        <th style={tableHeaderStyle}>Closing Stock</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {townReportData.map((item, rowIndex) => (
+                        <tr
+                          key={rowIndex}
+                          style={{ borderBottom: "1px solid #eee" }}
+                        >
+                          <td style={tableCellStyle}>
+                            {item.customer_name || ""}
+                          </td>
+                          <td style={tableCellStyle}>
+                            {item.site_area_name || ""}
+                          </td>
+                          <td style={tableCellStyle}>
+                            {item.os_full_barrels || 0}
+                          </td>
+                          <td style={tableCellStyle}>
+                            {item.os_abc_barrels || 0}
+                          </td>
+                          <td style={tableCellStyle}>
+                            {item.os_damaged_barrels || 0}
+                          </td>
+                          <td style={tableCellStyle}>
+                            {item.closing_stock || 0}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+
+              {/* If no data found after selection */}
+              {selectedTown &&
+                !isTownLoading &&
+                townReportData &&
+                townReportData.length === 0 && (
+                  <div
+                    style={{
+                      color: "#757575",
+                      padding: "1rem",
+                      textAlign: "center",
+                      fontStyle: "italic",
+                    }}
+                  >
+                    No report data found for this town.
+                  </div>
+                )}
+
+              {/* The Generate Report button now specifically triggers the docx generation */}
+              {selectedTown && townReportData && townReportData.length > 0 && (
+                <button
+                  type="submit"
+                  style={{
+                    background: "#1976d2",
+                    color: "#fff",
+                    border: "none",
+                    borderRadius: 4,
+                    padding: "0.75rem",
+                    fontSize: "1rem",
+                    cursor: "pointer",
+                    width: "25%",
+                    alignSelf: "center",
+                    marginTop: "1rem",
+                  }}
+                >
+                  Generate Report (Download Doc)
+                </button>
+              )}
+
               {townReportBlob && (
                 <button
                   type="button"
@@ -819,12 +1570,11 @@ const handleTownReportDownload = () => {
                     marginTop: "1rem",
                   }}
                 >
-                  Download Report
+                  Download Report (Word Document)
                 </button>
               )}
             </form>
           )}
-
           {reportType === "no-transaction" && (
             <>
               <form

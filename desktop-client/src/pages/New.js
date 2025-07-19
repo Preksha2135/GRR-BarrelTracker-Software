@@ -7,7 +7,7 @@ function New() {
     customer_name: "",
     contact_number: "",
     site_area_name: "",
-    address: "",
+    town: "",
     os_full_barrels: "",
     os_abc_barrels: "",
     os_damaged_barrels: "",
@@ -47,7 +47,7 @@ function New() {
       customer_name,
       contact_number,
       site_area_name,
-      address,
+      town,
       os_full_barrels,
       os_abc_barrels,
       os_damaged_barrels,
@@ -58,7 +58,7 @@ function New() {
       !customer_name ||
       !contact_number ||
       !site_area_name ||
-      !address ||
+      !town ||
       !os_full_barrels ||
       !os_abc_barrels ||
       !os_damaged_barrels ||
@@ -78,7 +78,7 @@ function New() {
         customer_name: "",
         contact_number: "",
         site_area_name: "",
-        address: "",
+        town: "",
         os_full_barrels: "",
         os_abc_barrels: "",
         os_damaged_barrels: "",
@@ -143,7 +143,7 @@ function New() {
             padding: "2rem",
             borderRadius: 8,
             boxShadow: "0 2px 8px rgba(0,0,0,0.1)",
-            width: 600,
+            width: 750,
             display: "flex",
             flexDirection: "column",
             gap: "1rem",
@@ -199,12 +199,12 @@ function New() {
             />
           </div>
           <div style={rowStyle}>
-            <label style={labelStyle}>Address</label>
+            <label style={labelStyle}>Town</label>
             <input
               style={inputStyle}
               type="text"
-              name="address"
-              value={form.address}
+              name="town"
+              value={form.town}
               onChange={handleChange}
             />
           </div>

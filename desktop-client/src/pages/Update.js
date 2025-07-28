@@ -210,6 +210,7 @@ function Update() {
       setForm((prev) => ({ ...prev, [name]: value }));
     }
   };
+  
   const handleEditClick = () => {
     setIsEditingContactInfo(true);
     setSuccessMessage(null);

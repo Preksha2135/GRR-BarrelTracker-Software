@@ -20,6 +20,21 @@ function New() {
   const handleChange = (e) => {
     const { name, value } = e.target;
 
+    if (name === "date") {
+      // Normalize today's date
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+
+      // Normalize selected date
+      const selectedDate = new Date(value);
+      selectedDate.setHours(0, 0, 0, 0);
+
+      if (selectedDate > today) {
+        alert("Date cannot be in the future."); // or use a state to show this error
+        return;
+      }
+    }
+
     setForm((prev) => {
       const updatedForm = { ...prev, [name]: value };
 
@@ -249,6 +264,7 @@ function New() {
               name="date"
               value={form.date}
               onChange={handleChange}
+              max={new Date().toISOString().split("T")[0]} // ✅ Prevents future date
             />
           </div>
           <div style={rowStyle}>

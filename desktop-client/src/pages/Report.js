@@ -40,6 +40,7 @@ function Report() {
   const [waitingPeriodDates, setWaitingPeriodDates] = useState({});
   const [noTxnSubmitMsg, setNoTxnSubmitMsg] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+  const [selectedSiteAreaName, setSelectedSiteAreaName] = useState("");
   // Add new state variables for town-wise report
   const [towns, setTowns] = useState([]);
   const [selectedTown, setSelectedTown] = useState("");
@@ -49,12 +50,17 @@ function Report() {
   // New state for complete data report
   const [completeData, setCompleteData] = useState([]);
   const [completeDataBlob, setCompleteDataBlob] = useState(null); // For complete data report docx
+  // for duplicate customer name with same phone number
+  const [phoneNumbers, setPhoneNumbers] = useState([]);
+  const [selectedPhoneNumber, setSelectedPhoneNumber] = useState("");
+  const [customersByPhone, setCustomersByPhone] = useState([]);
 
   const { ipcRenderer } = window.require("electron");
+  // Runs once on component mount
   useEffect(() => {
     // Fetch customers for the customer name report dropdown
     axios
-      .get("http://localhost:5000/api/customers-for-selection") // <--- CHANGED THIS ENDPOINT
+      .get("http://localhost:5000/api/customers-for-selection")
       .then((res) => setCustomers(res.data))
       .catch((err) => {
         console.error("Failed to fetch customers for selection:", err);
@@ -66,7 +72,19 @@ function Report() {
       .get("http://localhost:5000/api/towns")
       .then((res) => setTowns(res.data))
       .catch((err) => console.error("Failed to fetch towns:", err));
-  }, []);
+  }, []); // 👈 only runs on mount
+
+  // Runs whenever reportType changes
+  useEffect(() => {
+    if (reportType === "duplicate-phone") {
+      axios
+        .get("http://localhost:5000/api/distinct-phone-numbers")
+        .then((res) => setPhoneNumbers(res.data))
+        .catch((err) =>
+          console.error("Failed to fetch duplicate phone numbers:", err)
+        );
+    }
+  }, [reportType]);
 
   // Define the header map for both table display and docx generation
   const headerMap = {
@@ -89,6 +107,8 @@ function Report() {
     setSelectedTown("");
     setTownReportData(null);
     setTownReportBlob(null);
+    setSelectedPhoneNumber("");
+    setCustomersByPhone([]);
     setCompleteData([]); // Clear complete data
     setCompleteDataBlob(null); // Clear complete data blob
     // If "Complete Data Report" is selected, fetch the data immediately
@@ -97,37 +117,70 @@ function Report() {
     }
   };
 
+  // const handleChange = async (e) => {
+  //   const selectedCustomerName = e.target.value;
+  //   setCustomerName(selectedCustomerName);
+  //   setError("");
+  //   setDocBlob(null); // Clear previous doc blob when selection changes
+  //   setReportData(null); // Clear previous report data when selection changes
+
+  //   if (!selectedCustomerName) {
+  //     // If "Select" is chosen, clear data and return
+  //     return;
+  //   }
+
+  //   setIsLoading(true); // Set loading state
+  //   try {
+  //     // Fetch data for the selected customer
+  //     const res = await axios.get(
+  //       `http://localhost:5000/api/customer/${selectedCustomerName}/all`
+  //     );
+
+  //     if (!res.data || res.data.length === 0) {
+  //       setError("No records found for this customer.");
+  //       setReportData([]); // Set to empty array to ensure table doesn't render if no data
+  //     } else {
+  //       setReportData(res.data); // Set the fetched data to state for table display
+  //     }
+  //   } catch (err) {
+  //     setError("Failed to fetch customer report data.");
+  //     console.error("Error fetching report data:", err);
+  //     setReportData([]); // Clear data on error
+  //   } finally {
+  //     setIsLoading(false); // Clear loading state
+  //   }
+  // };
+
   const handleChange = async (e) => {
-    const selectedCustomerName = e.target.value;
+    const [selectedCustomerName, selectedSiteArea] = e.target.value.split("||");
     setCustomerName(selectedCustomerName);
+    setSelectedSiteAreaName(selectedSiteArea);
     setError("");
-    setDocBlob(null); // Clear previous doc blob when selection changes
-    setReportData(null); // Clear previous report data when selection changes
+    setDocBlob(null);
+    setReportData(null);
 
-    if (!selectedCustomerName) {
-      // If "Select" is chosen, clear data and return
-      return;
-    }
+    if (!selectedCustomerName || !selectedSiteArea) return;
 
-    setIsLoading(true); // Set loading state
+    setIsLoading(true);
     try {
-      // Fetch data for the selected customer
       const res = await axios.get(
-        `http://localhost:5000/api/customer/${selectedCustomerName}/all`
+        `http://localhost:5000/api/customer/${encodeURIComponent(
+          selectedCustomerName
+        )}/site/${encodeURIComponent(selectedSiteArea)}`
       );
 
       if (!res.data || res.data.length === 0) {
-        setError("No records found for this customer.");
-        setReportData([]); // Set to empty array to ensure table doesn't render if no data
+        setError("No records found for this customer and site area.");
+        setReportData([]);
       } else {
-        setReportData(res.data); // Set the fetched data to state for table display
+        setReportData(res.data);
       }
     } catch (err) {
-      setError("Failed to fetch customer report data.");
+      setError("Failed to fetch report data.");
       console.error("Error fetching report data:", err);
-      setReportData([]); // Clear data on error
+      setReportData([]);
     } finally {
-      setIsLoading(false); // Clear loading state
+      setIsLoading(false);
     }
   };
 
@@ -466,274 +519,6 @@ function Report() {
     }
   };
 
-  // const handleNoTransactionReport = async (e) => {
-  //   e.preventDefault(); // Prevent default form submission behavior
-  //   setError(""); // Clear any previous errors
-  //   setNoTxnDocBlob(null); // Clear any previously generated document blob
-  //   setNoTxnRecords([]); // Clear previous no transaction records
-  //   setWaitingPeriodDates({}); // Clear previous waiting period dates
-
-  //   try {
-  //     // Fetch all barrel records
-  //     const res = await axios.get("http://localhost:5000/api/barrels/all");
-  //     let allRecords = res.data;
-
-  //     // Get today's date and set hours to 0 for accurate date comparison
-  //     const today = new Date();
-  //     today.setHours(0, 0, 0, 0);
-
-  //     // --- NEW STRATEGY FOR "NO TRANSACTION REPORT" INPUT LIST ---
-
-  //     // Step 1: Identify all customer names that already have *any* record with a waiting_period_end_date set.
-  //     const customersWithSetWaitingPeriod = new Set();
-  //     allRecords.forEach((record) => {
-  //       if (record.waiting_period_end_date) {
-  //         customersWithSetWaitingPeriod.add(record.customer_name);
-  //       }
-  //     });
-
-  //     // Step 2: Filter all records for the 60-day gap criteria AND ensure the customer has NOT had a waiting_period_end_date set on *any* of their records.
-  //     const candidatesForNoTxnReport = allRecords.filter((row) => {
-  //       // Exclude customers who already have a waiting_period_end_date set on any of their records
-  //       if (customersWithSetWaitingPeriod.has(row.customer_name)) {
-  //         return false;
-  //       }
-
-  //       // Skip if 'date' is not present
-  //       if (!row.date) return false;
-
-  //       const recordDate = new Date(row.date);
-  //       recordDate.setHours(0, 0, 0, 0);
-
-  //       const diffDays = Math.floor(
-  //         (today - recordDate) / (1000 * 60 * 60 * 24)
-  //       );
-
-  //       // Return true if the difference is 60 days or more
-  //       return diffDays >= 60;
-  //     });
-
-  //     // Step 3: From these candidates, deduplicate by customer_name, keeping the record with the largest ID.
-  //     const uniqueNoTxnRecordsMap = new Map();
-  //     candidatesForNoTxnReport.forEach((record) => {
-  //       const existingRecord = uniqueNoTxnRecordsMap.get(record.customer_name);
-  //       if (
-  //         !existingRecord ||
-  //         parseInt(record.id) > parseInt(existingRecord.id)
-  //       ) {
-  //         uniqueNoTxnRecordsMap.set(record.customer_name, record);
-  //       }
-  //     });
-  //     const filteredAndDeduplicatedNoTxn = Array.from(
-  //       uniqueNoTxnRecordsMap.values()
-  //     );
-
-  //     // --- Filtering and Deduplicating for "Waiting Period End Date" report (for the DOCX table) ---
-  //     // This section remains as previously corrected, as it's for records where
-  //     // waiting_period_end_date *is* set and is today or earlier.
-  //     const filteredForWaitingPeriod = allRecords.filter((row) => {
-  //       if (!row.waiting_period_end_date) return false; // Skip if 'waiting_period_end_date' is not present
-
-  //       const waitingDate = new Date(row.waiting_period_end_date);
-  //       waitingDate.setHours(0, 0, 0, 0);
-
-  //       return waitingDate.getTime() <= today.getTime(); // Return true if the waiting date is today or earlier
-  //     });
-
-  //     // Deduplicate the filtered waiting period records by customer_name, keeping the largest ID
-  //     const uniqueWaitingPeriodRecordsMap = new Map();
-  //     filteredForWaitingPeriod.forEach((record) => {
-  //       const existingRecord = uniqueWaitingPeriodRecordsMap.get(
-  //         record.customer_name
-  //       );
-  //       if (
-  //         !existingRecord ||
-  //         parseInt(record.id) > parseInt(existingRecord.id)
-  //       ) {
-  //         uniqueWaitingPeriodRecordsMap.set(record.customer_name, record);
-  //       }
-  //     });
-  //     const waitingPeriodRecords = Array.from(
-  //       uniqueWaitingPeriodRecordsMap.values()
-  //     );
-
-  //     // If no records are found for either report, set an error and return
-  //     if (
-  //       filteredAndDeduplicatedNoTxn.length === 0 &&
-  //       waitingPeriodRecords.length === 0
-  //     ) {
-  //       setError(
-  //         "No records found with a 60-day or more gap or expiring waiting period."
-  //       );
-  //       return;
-  //     }
-
-  //     // Sort the filtered and deduplicated "No Transaction" records by date in ascending order
-  //     filteredAndDeduplicatedNoTxn.sort(
-  //       (a, b) => new Date(a.date) - new Date(b.date)
-  //     );
-  //     setNoTxnRecords(filteredAndDeduplicatedNoTxn); // Update state with filtered records for the form
-
-  //     // Initialize waitingPeriodDates state for the "No Transaction" records that can be updated
-  //     const initialDates = {};
-  //     filteredAndDeduplicatedNoTxn.forEach((row) => {
-  //       initialDates[row.id] = row.waiting_period_end_date || "";
-  //     });
-  //     setWaitingPeriodDates(initialDates); // Update state with initial waiting period dates
-
-  //     // Prepare headers for the Word document tables
-  //     const headers = ["Customer Name", "Contact Number", "Date"];
-
-  //     // Prepare table 1 rows (records with 60-day or more gap) for the Word document
-  //     const tableRows1 = [
-  //       // Header row
-  //       new TableRow({
-  //         children: headers.map(
-  //           (h) =>
-  //             new TableCell({
-  //               children: [
-  //                 new Paragraph({
-  //                   children: [new TextRun({ text: h, bold: true })],
-  //                 }),
-  //               ],
-  //               width: { size: 2000, type: WidthType.DXA }, // Set column width
-  //             })
-  //         ),
-  //       }),
-  //       // Data rows
-  //       ...filteredAndDeduplicatedNoTxn.map(
-  //         (row) =>
-  //           new TableRow({
-  //             children: [
-  //               new TableCell({
-  //                 children: [new Paragraph(row.customer_name || "")],
-  //                 width: { size: 2000, type: WidthType.DXA },
-  //               }),
-  //               new TableCell({
-  //                 children: [new Paragraph(row.contact_number || "")],
-  //                 width: { size: 2000, type: WidthType.DXA },
-  //               }),
-  //               new TableCell({
-  //                 children: [new Paragraph(formatUTCToLocal(row.date))], // Format date for display
-  //                 width: { size: 2000, type: WidthType.DXA },
-  //               }),
-  //             ],
-  //           })
-  //       ),
-  //     ];
-
-  //     // Prepare table 2 rows (records where waiting_period_end_date is today or earlier) for the Word document
-  //     const tableRows2 = [
-  //       // Header row
-  //       new TableRow({
-  //         children: headers.map(
-  //           (h) =>
-  //             new TableCell({
-  //               children: [
-  //                 new Paragraph({
-  //                   children: [new TextRun({ text: h, bold: true })],
-  //                 }),
-  //               ],
-  //               width: { size: 2000, type: WidthType.DXA },
-  //             })
-  //         ),
-  //       }),
-  //       // Data rows
-  //       ...waitingPeriodRecords.map(
-  //         (row) =>
-  //           new TableRow({
-  //             children: [
-  //               new TableCell({
-  //                 children: [new Paragraph(row.customer_name || "")],
-  //                 width: { size: 2000, type: WidthType.DXA },
-  //               }),
-  //               new TableCell({
-  //                 children: [new Paragraph(row.contact_number || "")],
-  //                 width: { size: 2000, type: WidthType.DXA },
-  //               }),
-  //               new TableCell({
-  //                 children: [
-  //                   new Paragraph(
-  //                     formatUTCToLocal(row.waiting_period_end_date)
-  //                   ), // Format date for display
-  //                 ],
-  //                 width: { size: 2000, type: WidthType.DXA },
-  //               }),
-  //             ],
-  //           })
-  //       ),
-  //     ];
-
-  //     // Create the Word document with two sections/tables
-  //     const doc = new Document({
-  //       sections: [
-  //         {
-  //           properties: {},
-  //           children: [
-  //             // Title for the first report
-  //             new Paragraph({
-  //               children: [
-  //                 new TextRun({
-  //                   text: `No Transaction Report (60-day or more gap)`,
-  //                   bold: true,
-  //                   size: 32, // Font size
-  //                 }),
-  //               ],
-  //               spacing: { after: 300 }, // Spacing after the paragraph
-  //             }),
-  //             // Subtitle for the first table
-  //             new Paragraph({
-  //               children: [
-  //                 new TextRun({
-  //                   text: "Records with 60-day or more gap",
-  //                   bold: true,
-  //                   size: 28,
-  //                 }),
-  //               ],
-  //               spacing: { after: 200 },
-  //             }),
-  //             // First table
-  //             new Table({
-  //               rows: tableRows1,
-  //               width: { size: 100, type: WidthType.PERCENTAGE }, // Table width
-  //             }),
-  //             // Title for the second report (with spacing before it)
-  //             new Paragraph({
-  //               children: [
-  //                 new TextRun({
-  //                   text: "Records with Waiting Period End Date",
-  //                   bold: true,
-  //                   size: 28,
-  //                 }),
-  //               ],
-  //               spacing: { before: 400, after: 200 }, // Spacing before and after
-  //             }),
-  //             new Table({
-  //               rows: tableRows2,
-  //               width: { size: 100, type: WidthType.PERCENTAGE },
-  //             }),
-  //           ],
-  //         },
-  //       ],
-  //     });
-
-  //     // Generate the document as a Blob
-  //     const blob = await Packer.toBlob(doc);
-  //     setNoTxnDocBlob(blob); // Update state with the generated blob
-
-  //     // If running in an Electron environment, save the report using the provided API
-  //     if (window.electron?.saveReport) {
-  //       const filename = "no_transaction_report.docx";
-  //       blob.arrayBuffer().then((buffer) => {
-  //         window.electron.saveReport(buffer, filename);
-  //       });
-  //     }
-  //   } catch (err) {
-  //     // Catch and handle any errors during the process
-  //     setError("Failed to generate no transaction report.");
-  //     console.error(err); // Log the error to the console
-  //   }
-  // };
   const handleNoTransactionReport = async (e) => {
     e.preventDefault(); // Prevent default form submission behavior
     setError(""); // Clear any previous errors
@@ -1029,6 +814,86 @@ function Report() {
     }));
   };
 
+  // const handlePhoneNumberChange = async (e) => {
+  //   const phone = e.target.value;
+  //   setSelectedPhoneNumber(phone);
+  //   setCustomersByPhone([]);
+
+  //   if (!phone) return;
+
+  //   try {
+  //     const res = await axios.get(
+  //       `http://localhost:5000/api/customers-by-phone?contact_number=${encodeURIComponent(
+  //         phone
+  //       )}`
+  //     );
+  //     setCustomersByPhone(res.data);
+  //   } catch (err) {
+  //     console.error("Error fetching customers by phone number:", err);
+  //   }
+  // };
+
+  const generateDuplicatePhoneDoc = () => {
+    const tableRows = [];
+
+    // Header row
+    tableRows.push(
+      new TableRow({
+        children: [
+          new TableCell({
+            width: { size: 30, type: WidthType.PERCENTAGE },
+            children: [new Paragraph({ text: "Phone Number", bold: true })],
+          }),
+          new TableCell({
+            width: { size: 70, type: WidthType.PERCENTAGE },
+            children: [new Paragraph({ text: "Customer Names", bold: true })],
+          }),
+        ],
+      })
+    );
+
+    // Data rows
+    phoneNumbers.forEach((entry) => {
+      const phone = entry.contact_number;
+      const names = entry.customer_names.join(", ");
+
+      tableRows.push(
+        new TableRow({
+          children: [
+            new TableCell({
+              children: [new Paragraph(phone)],
+            }),
+            new TableCell({
+              children: [new Paragraph(names)],
+            }),
+          ],
+        })
+      );
+    });
+
+    const doc = new Document({
+      sections: [
+        {
+          children: [
+            new Paragraph({
+              text: "Duplicate Phone Number Report",
+              heading: "Heading1",
+            }),
+            new Paragraph(" "),
+            new Table({
+              width: { size: 100, type: WidthType.PERCENTAGE },
+              rows: tableRows,
+            }),
+          ],
+        },
+      ],
+    });
+
+    Packer.toBlob(doc).then((blob) => {
+      saveAs(blob, "Duplicate_Phone_Number_Report.docx");
+    });
+  };
+
   // NEW FUNCTION: Fetch Complete Data Report
   // Function to fetch JSON complete data (for preview/initial check)
   const fetchCompleteDataReport = async () => {
@@ -1152,6 +1017,9 @@ function Report() {
                 <option value="customer">Customer Name Report</option>
                 <option value="town-wise">Town-wise Report</option>
                 <option value="no-transaction">No Transaction Report</option>
+                <option value="duplicate-phone">
+                  Duplicate Phone Number Report
+                </option>
                 <option value="complete-data">Complete Data Report</option>
               </select>
             </div>
@@ -1186,9 +1054,12 @@ function Report() {
                 >
                   <option value="">Select</option>
                   {customers.map((cust, index) => (
-                    <option key={index} value={cust.customer_name}>
-                      {cust.customer_name}{" "}
-                      {cust.site_area_name ? `(${cust.site_area_name})` : ""}
+                    <option
+                      key={index}
+                      value={`${cust.customer_name}||${cust.site_area_name}`}
+                    >
+                      {cust.customer_name}
+                      {cust.site_area_name ? ` (${cust.site_area_name})` : ""}
                     </option>
                   ))}
                 </select>
@@ -1276,7 +1147,7 @@ function Report() {
                     marginTop: "1rem",
                   }}
                 >
-                  Generate Report (Download Doc)
+                  Generate DOCX Report
                 </button>
               )}
 
@@ -1297,7 +1168,7 @@ function Report() {
                     marginTop: "1rem",
                   }}
                 >
-                  Download Report (Word Document)
+                  Download DOCX Report
                 </button>
               )}
             </form>
@@ -1341,7 +1212,7 @@ function Report() {
                   marginTop: "1rem",
                 }}
               >
-                Download Complete Report
+                Download Complete DOCX Report
               </button>
             </div>
           )}
@@ -1549,7 +1420,7 @@ function Report() {
                     marginTop: "1rem",
                   }}
                 >
-                  Generate Report (Download Doc)
+                  Generate DOCX Report
                 </button>
               )}
 
@@ -1570,7 +1441,7 @@ function Report() {
                     marginTop: "1rem",
                   }}
                 >
-                  Download Report (Word Document)
+                  Download DOCX Report
                 </button>
               )}
             </form>
@@ -1634,7 +1505,7 @@ function Report() {
                       marginTop: "1rem",
                     }}
                   >
-                    Download Report
+                    Download DOCX Report
                   </button>
                 )}
               </form>
@@ -1736,6 +1607,47 @@ function Report() {
                     </div>
                   )}
                 </form>
+              )}
+            </>
+          )}
+          {reportType === "duplicate-phone" && (
+            <>
+              <h3>Phone Numbers Shared by Multiple Unique Customers</h3>
+              {phoneNumbers.length > 0 ? (
+                <ul>
+                  {phoneNumbers.map((entry, index) => (
+                    <li key={index}>
+                      📞 <strong>{entry.contact_number}</strong>
+                      <ul style={{ marginLeft: "1rem" }}>
+                        {entry.customer_names.map((name, idx) => (
+                          <li key={idx}>👤 {name}</li>
+                        ))}
+                      </ul>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p>No duplicate phone numbers found.</p>
+              )}
+              {phoneNumbers.length > 0 && (
+                <button
+                  onClick={generateDuplicatePhoneDoc}
+                  type="submit"
+                  style={{
+                    background: "#1976d2",
+                    color: "#fff",
+                    border: "none",
+                    borderRadius: 4,
+                    padding: "0.75rem",
+                    fontSize: "1rem",
+                    cursor: "pointer",
+                    width: "25%",
+                    alignSelf: "center",
+                    marginTop: "1rem",
+                  }}
+                >
+                  Download DOCX Report
+                </button>
               )}
             </>
           )}

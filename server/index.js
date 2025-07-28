@@ -202,10 +202,6 @@ app.get("/api/customers", async (req, res) => {
   }
 });
 
-// Get all records for a customer (for report)
-
-// app.js (or your backend file)
-
 app.get("/api/barrels/all", async (req, res) => {
   try {
     const result = await pool.query("SELECT * FROM grr_barrels");
@@ -227,6 +223,22 @@ app.get("/api/customer/:name/all", async (req, res) => {
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Failed to fetch customer records" });
+  }
+});
+
+app.get("/api/customer/:name/site/:site", async (req, res) => {
+  try {
+    const { name, site } = req.params;
+    const result = await pool.query(
+      "SELECT * FROM grr_barrels WHERE customer_name = $1 AND site_area_name = $2 ORDER BY date ASC",
+      [name, site]
+    );
+    res.json(result.rows);
+  } catch (err) {
+    console.error(err);
+    res
+      .status(500)
+      .json({ error: "Failed to fetch customer records by site area" });
   }
 });
 
@@ -344,7 +356,43 @@ app.get("/api/town-report/:town", async (req, res) => {
   }
 });
 
-// Add this new route to your Express app
+app.get("/api/distinct-phone-numbers", async (req, res) => {
+  try {
+    const result = await pool.query(`
+      SELECT contact_number, array_agg(DISTINCT customer_name) AS customer_names
+      FROM grr_barrels
+      GROUP BY contact_number
+      HAVING COUNT(DISTINCT customer_name) > 1
+      ORDER BY contact_number
+    `);
+
+    res.json(result.rows); // [{ contact_number, customer_names: [..] }, ...]
+  } catch (err) {
+    console.error("Failed to fetch duplicate phone numbers:", err);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+app.get("/api/customers-by-phone", async (req, res) => {
+  const { contact_number } = req.query;
+  if (!contact_number) {
+    return res.status(400).json({ error: "Missing contact_number in query" });
+  }
+
+  try {
+    const result = await pool.query(
+      `SELECT DISTINCT customer_name 
+       FROM grr_barrels 
+       WHERE contact_number = $1
+       ORDER BY customer_name ASC`,
+      [contact_number]
+    );
+    res.json(result.rows); // returns array of unique customer names
+  } catch (err) {
+    console.error("Failed to fetch customers by phone number:", err);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
 
 // Route to get all data (complete data report)
 app.get("/api/reports/all-data", async (req, res) => {
